@@ -215,44 +215,63 @@ function registerHit(v){
   }
 }
 
-/* ========= sensör: tek soru — vuruş oldu mu, ne şiddette? ========= */
+/* ========= sensör: vuruş = bir hareketin ani, sert DURMASI =========
+   Bir vuruşta iki ivme dalgası olur: önce savurma (hareket yönünde), sonra duruş (ters yönde, çok ani).
+   Ses yalnızca ikincide çıkar: savurma tek başına, yavaş hareketler ve yürüme sallantısı ses vermez.
+   Duruş ilk örnekte yakalanır (bekleme yok); şiddet, savurmanın gücünden okunur. Yön ve tutuş fark etmez. */
 const DET = {
-  arm: 2.6,        // m/s²: bu değeri aşınca tepe aranmaya başlanır
-  rearm: 1.4,      // yeniden kurulmak için altına inilmesi gereken değer
-  refractory: 110, // ms: iki vuruş arası en az süre
-  window: 40,      // ms: tepe için en fazla bekleme
-  runMax: 12,      // şiddet ölçeği: kendi kendine öğrenir
-  state: "idle", peak: 0, tArm: 0, tFire: 0, prev: 0, samples: 0, lastSample: 0
+  swingMin: 1.8,    // m/s²: "hareket var" sayılması için
+  hitMin: 4.5,      // m/s²: duruş ivmesi alt sınırı (ölçek büyüdükçe yükselir)
+  jerkMin: 5.0,     // m/s² / örnek: duruş ne kadar ani olmalı (savurma yavaş yükselir, çarpma sıçrar)
+  refractory: 120,  // ms: iki vuruş arası en az süre
+  swingWindow: 320, // ms: savurma bu süre içinde bir duruşla bitmeli
+  runMax: 10,       // şiddet ölçeği: kendi kendine öğrenir
+  tFire: 0, prevMag: 0, swingDir: null, swingPeak: 0, tSwing: 0, peakTrack: 0, trackUntil: 0, lastPeak: 0
 };
-function detSample(mag, tMs){
-  DET.samples++; DET.lastSample = tMs;
-  if (DET.state === "cool"){ if (tMs - DET.tFire >= DET.refractory && mag < DET.rearm) DET.state = "idle"; DET.prev = mag; return; }
-  if (DET.state === "idle"){
-    if (mag >= DET.arm){ DET.state = "armed"; DET.peak = mag; DET.tArm = tMs; }
-    DET.prev = mag; return;
+function detSample(ax, ay, az, tMs){
+  const mag = Math.hypot(ax, ay, az), jerk = mag - DET.prevMag; DET.prevMag = mag;
+  // vuruş sonrası 70 ms: gerçek tepeyi izle, ölçeği ona göre öğren
+  if (DET.trackUntil){
+    if (tMs < DET.trackUntil){ DET.peakTrack = Math.max(DET.peakTrack, mag); return; }
+    DET.lastPeak = DET.peakTrack; DET.runMax = Math.max(6, DET.peakTrack, DET.runMax * 0.985); DET.trackUntil = 0;
   }
-  // armed: tepe geçildi mi ya da süre doldu mu?
-  DET.peak = Math.max(DET.peak, mag);
-  const falling = mag < DET.prev && DET.peak >= DET.arm;
-  if (falling || tMs - DET.tArm >= DET.window){
-    fireFromPeak(DET.peak, tMs);
+  if (tMs - DET.tFire < DET.refractory) return;
+  if (mag < DET.swingMin) return;
+  const fresh = DET.swingDir && tMs - DET.tSwing <= DET.swingWindow;
+  if (fresh){
+    const dot = ax * DET.swingDir[0] + ay * DET.swingDir[1] + az * DET.swingDir[2];   // + aynı yön, − ters yön
+    const hitT = Math.max(DET.hitMin, 0.3 * DET.runMax);
+    if (dot <= -hitT && (jerk >= DET.jerkMin || mag >= 2 * hitT)){
+      // savurmaya ters, sert ve ani: vuruş — hemen çal
+      DET.tFire = tMs; DET.trackUntil = tMs + 70; DET.peakTrack = mag;
+      const v = clamp(Math.max(DET.swingPeak * 1.4, mag) / DET.runMax, 0.1, 1);
+      DET.swingDir = null; DET.swingPeak = 0;
+      registerHit(v); return;
+    }
+    if (dot > 0){ // savurma sürüyor / güçleniyor
+      if (mag > DET.swingPeak){ DET.swingPeak = mag; DET.swingDir = [ax / mag, ay / mag, az / mag]; }
+      DET.tSwing = tMs;
+    }
+  } else {
+    DET.swingDir = [ax / mag, ay / mag, az / mag]; DET.swingPeak = mag; DET.tSwing = tMs;
   }
-  DET.prev = mag;
-}
-function fireFromPeak(peak, tMs){
-  DET.state = "cool"; DET.tFire = tMs;
-  DET.runMax = Math.max(6, peak, DET.runMax * 0.985);   // yavaşça gevşer, sert vuruşla yükselir
-  const v = clamp((peak - DET.arm * 0.6) / (DET.runMax - DET.arm * 0.6), 0.08, 1);
-  registerHit(v);
 }
 let motionSeen = 0;
+const G = { est: null };   // yerçekimi kestirimi (yalnızca lineer ivme vermeyen cihazlar için)
 function onMotion(e){
-  let m;
+  let ax, ay, az;
   const a = e.acceleration;
-  if (a && a.x != null){ m = Math.hypot(a.x, a.y, a.z); }
-  else { const g = e.accelerationIncludingGravity; if (!g || g.x == null) return; m = Math.abs(Math.hypot(g.x, g.y, g.z) - 9.81); }
+  if (a && a.x != null){ ax = a.x; ay = a.y; az = a.z; }
+  else {
+    const g = e.accelerationIncludingGravity; if (!g || g.x == null) return;
+    if (!G.est) G.est = [g.x, g.y, g.z];
+    const m = Math.hypot(g.x - G.est[0], g.y - G.est[1], g.z - G.est[2]);
+    const k = m < 1.5 ? 0.08 : 0.005;   // hareketsizken hızlı, hareketteyken çok yavaş güncelle
+    G.est = [G.est[0] + k * (g.x - G.est[0]), G.est[1] + k * (g.y - G.est[1]), G.est[2] + k * (g.z - G.est[2])];
+    ax = g.x - G.est[0]; ay = g.y - G.est[1]; az = g.z - G.est[2];
+  }
   motionSeen++;
-  if (S.live) detSample(m, performance.now());
+  if (S.live) detSample(ax, ay, az, performance.now());
 }
 const hasTouch = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
 const inApp = /Instagram|FBAN|FBAV|WhatsApp|Line\/|Twitter|TikTok/i.test(navigator.userAgent);
