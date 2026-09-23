@@ -60,6 +60,10 @@
   body.live{ touch-action:none; }
   button.ghost{ width:100%; margin-top:10px; padding:12px; border-radius:12px; border:1px solid var(--line); background:transparent; color:var(--mute); font-size:15px; }
   .note{ color:var(--mute); font-size:13px; margin:4px 0 10px; }
+  select{ flex:1; background:#2a221c; color:var(--ink); border:1px solid var(--line); border-radius:10px; padding:8px; font-size:14px; }
+  .rec{ margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:12px; font-size:14px; }
+  .recBtns{ display:flex; gap:8px; margin:10px 0 6px; }
+  .recBtns .chip{ text-align:center; text-decoration:none; }
   .warn{ background:#3a2320; border:1px solid #6a3a33; color:#f3d9d4; padding:10px 12px; border-radius:12px; font-size:14px; margin-top:10px; }
   [hidden]{ display:none !important; }
 </style>
@@ -94,11 +98,18 @@
   <div class="row"><label for="tempo">Tempo</label><input id="tempo" type="range" min="60" max="180" value="100"><output id="tempoOut">100</output></div>
   <div class="row"><label for="pvol">Nabız sesi</label><input id="pvol" type="range" min="0" max="100" value="55"><output id="pvolOut">55</output></div>
   <div class="row"><label for="sens">Hassasiyet</label><input id="sens" type="range" min="1" max="5" value="3"><output id="sensOut">3</output></div>
+  <div class="row"><label for="detSel">Algılama</label><select id="detSel"><option value="gyro">Bilek tepesi (jiroskop) — yeni</option><option value="acc">Ani duruş (ivme) — eski</option></select></div>
   <div class="note" id="homeNote" hidden>Tarayıcı düğmelerine el değmesin diye: paylaş menüsünden <strong>Ana Ekrana Ekle</strong> deyip oradan aç; çubuksuz, tam ekran çalışır.</div>
 </div>
 
 <button class="big" id="btnStart">Başla</button>
 <button class="ghost" id="btnTry">Sesi dene (vuruş sesi)</button>
+<button class="ghost" id="btnRec">20 sn kayıt yap (ham sensör verisi)</button>
+<div class="rec" id="recBox" hidden>
+  <div id="recInfo"></div>
+  <div class="recBtns"><button class="chip" id="btnShare">Paylaş</button><a class="chip" id="btnDl" href="#">İndir</a></div>
+  <div class="note">Dosyayı bana (Claude) gönder; eşikleri senin gerçek vuruşlarına göre ayarlayacağım.</div>
+</div>
 <div class="warn" id="warn" hidden></div>
 
 <script>
@@ -170,6 +181,7 @@ function schedule(){
     const isD = pat.D.includes(pos), isT = pat.T.includes(pos);
     if (P.vol > 0){ if (isD) pulseDum(t, P.vol); else if (isT) pulseTek(t, P.vol); }
     P.beatEvents.push({ t, kind: isD ? "dum" : isT ? "tek" : "rest", bar: pos === 0 });
+    if (REC.on && (isD || isT)) REC.beats.push({ t_ms: Math.round(performance.now() + (t - ctx.currentTime) * 1000 - REC.t0), tur: isD ? "dum" : "tek" });
     P.eighth = eighthDur();
     P.next += P.eighth; P.idx++;
   }
@@ -216,6 +228,7 @@ function registerHit(v){
     if (sync) S.synced++;
   }
   hitSound(when, v);
+  if (REC.on) REC.hits.push({ t_ms: Math.round(performance.now() - REC.t0), siddet: +v.toFixed(2) });
   S.hits++;
   const pn = performance.now(); S.times.push(pn); if (S.times.length > 9) S.times.shift();
   flashHit(v, sync);
@@ -243,7 +256,7 @@ const DET = {
   tau: 45,          // ms: hareket yönü bu süreyle kayan ortalamadan izlenir (kısa: hızlı salınımda bulanıklaşmasın)
   k: 1.0, tFire: 0, prevA: [0, 0, 0], prevA2: [0, 0, 0], tPrev: 0, flow: [0, 0, 0], peakTrack: 0, trackUntil: 0, lastPeak: 0
 };
-function setSens(level){ DET.k = SENS[clamp(level, 1, 5) - 1]; }
+function setSens(level){ DET.k = GY.k = SENS[clamp(level, 1, 5) - 1]; }
 function detSample(ax, ay, az, tMs){
   const mag = Math.hypot(ax, ay, az), pv = DET.prevA;
   const pv2 = DET.prevA2, jerk1 = Math.hypot(ax - pv[0], ay - pv[1], az - pv[2]), jerk2 = Math.hypot(ax - pv2[0], ay - pv2[1], az - pv2[2]) / 1.4;
@@ -274,8 +287,34 @@ function detSample(ax, ay, az, tMs){
   const k = 1 - Math.exp(-dt / DET.tau);
   f[0] += k * (ax - f[0]); f[1] += k * (ay - f[1]); f[2] += k * (az - f[2]);
 }
-let motionSeen = 0, dbgLat = "";
+/* ========= jiroskop dedektörü (varsayılan, jiroskop varsa) =========
+   Havada davul: çarpma yok, dolayısıyla "duruş" da yok. Bileğin kırılışı jiroskopta tek ve temiz bir açısal hız tepesi verir;
+   ses o tepede çıkar — küçük, doğal bir bilek vuruşu yeter, kamçı gerekmez. Tepe = hız yükseldi, eşiği geçti, azalmaya başladı. */
+const GY = {
+  wMin0: 160,       // °/s: bu hızı aşan bir tepe vuruştur (hassasiyet çarpanıyla ölçeklenir)
+  scale: 700,       // °/s: şiddet 1.0 sayılan tepe
+  refractory: 70,   // ms
+  k: 1.0, prev: 0, prev2: 0, rising: false, peak: 0, tFire: 0
+};
+function gyroSample(gx, gy, gz, tMs){
+  const w = Math.hypot(gx, gy, gz), wT = GY.wMin0 * GY.k;
+  if (w > GY.prev){ GY.rising = true; GY.peak = w; }
+  else if (GY.rising){
+    // tepe geçildi (bir önceki örnek tepeydi)
+    GY.rising = false;
+    if (GY.peak >= wT && tMs - GY.tFire >= GY.refractory){
+      GY.tFire = tMs;
+      const v = clamp((GY.peak - wT * 0.5) / (GY.scale - wT * 0.5), 0.15, 1);
+      $("dbg").textContent = `tepe ${Math.round(GY.peak)} °/s · eşik ${Math.round(wT)} · ${dbgLat}`;
+      registerHit(v);
+    }
+  }
+  GY.prev2 = GY.prev; GY.prev = w;
+}
+let motionSeen = 0, gyroSeen = 0, dbgLat = "", useGyro = true;
 const G = { est: null };   // yerçekimi kestirimi (yalnızca lineer ivme vermeyen cihazlar için)
+/* ---- ham veri kaydı: 20 sn ivme + jiroskop + nabız/vuruş zamanları ---- */
+const REC = { on: false, rows: [], beats: [], hits: [], t0: 0, dur: 20000, timer: null };
 function onMotion(e){
   let ax, ay, az;
   const a = e.acceleration;
@@ -289,7 +328,34 @@ function onMotion(e){
     ax = g.x - G.est[0]; ay = g.y - G.est[1]; az = g.z - G.est[2];
   }
   motionSeen++;
-  if (S.live) detSample(ax, ay, az, performance.now());
+  const r = e.rotationRate, hasG = r && r.alpha != null;
+  if (hasG) gyroSeen++;
+  const t = performance.now();
+  if (REC.on) REC.rows.push([Math.round(t - REC.t0), +ax.toFixed(3), +ay.toFixed(3), +az.toFixed(3), hasG ? +r.alpha.toFixed(1) : null, hasG ? +r.beta.toFixed(1) : null, hasG ? +r.gamma.toFixed(1) : null]);
+  if (!S.live) return;
+  if (useGyro && hasG) gyroSample(r.alpha, r.beta, r.gamma, t); else detSample(ax, ay, az, t);
+}
+function recStart(){
+  REC.on = true; REC.rows = []; REC.beats = []; REC.hits = []; REC.t0 = performance.now();
+  clearTimeout(REC.timer); REC.timer = setTimeout(() => { if (S.live) stop(); }, REC.dur + 2500);
+}
+function recFinish(){
+  if (!REC.on) return; REC.on = false; clearTimeout(REC.timer);
+  const meta = { app: "bedenritim v5.5", tarih: new Date().toISOString(), cihaz: navigator.userAgent, dedektor: useGyro && gyroSeen ? "jiroskop" : "ivme",
+    hassasiyet: +$("sens").value, usul: pattern, tempo: P.bpm, nabizSesi: P.vol, sesGecikmesiMs: ctx && (ctx.outputLatency || ctx.baseLatency) ? Math.round((ctx.outputLatency || ctx.baseLatency) * 1000) : null,
+    ornekSayisi: REC.rows.length, sureMs: REC.rows.length ? REC.rows[REC.rows.length - 1][0] : 0,
+    kolonlar: ["t_ms", "ax", "ay", "az", "gyro_alpha", "gyro_beta", "gyro_gamma"] };
+  const data = { meta, nabizVurusMs: REC.beats, algilananVurusMs: REC.hits, ornekler: REC.rows };
+  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  const d = new Date(), pad = n => String(n).padStart(2, "0");
+  const name = `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${String(d.getFullYear()).slice(2)}-${pad(d.getHours())}-${pad(d.getMinutes())}-bedenritim-kayit.json`;
+  const file = new File([blob], name, { type: "application/json" });
+  const box = $("recBox"); box.hidden = false;
+  $("recInfo").textContent = `${REC.rows.length} örnek, ${(meta.sureMs / 1000).toFixed(1)} sn, ${meta.dedektor} dedektörü, ${REC.hits.length} algılanan vuruş`;
+  const canShare = navigator.canShare && navigator.canShare({ files: [file] });
+  $("btnShare").hidden = !canShare;
+  $("btnShare").onclick = async () => { try { await navigator.share({ files: [file], title: "Beden Ritim kaydı" }); } catch(e){} };
+  const url = URL.createObjectURL(blob); const a = $("btnDl"); a.href = url; a.download = name;
 }
 const hasTouch = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
 const inApp = /Instagram|FBAN|FBAV|WhatsApp|Line\/|Twitter|TikTok/i.test(navigator.userAgent);
@@ -332,18 +398,21 @@ async function requestWake(){ try { wakeLock = await navigator.wakeLock.request(
 function setStatus(s){ $("status").textContent = s; }
 function warn(msg){ const w = $("warn"); w.innerHTML = msg; w.hidden = !msg; }
 
-async function start(){
-  motionSeen = 0;
+async function start(rec){
+  motionSeen = 0; gyroSeen = 0; $("recBox").hidden = true;
   const ok = await ensureSensor();          // ilk iş: izin (araya await girmeden)
   if (!ok && hasTouch) return;              // telefonda sensör yoksa başlama, uyarı ekranda
   initAudio(); try { await ctx.resume(); } catch(e){}
   S.hits = 0; S.synced = 0; S.times = []; $("sHits").textContent = 0; $("sSync").textContent = "–"; $("sBpm").textContent = "–";
   Object.assign(DET, { tFire: 0, prevA: [0, 0, 0], prevA2: [0, 0, 0], tPrev: 0, flow: [0, 0, 0], peakTrack: 0, trackUntil: 0, lastPeak: 0 });
+  Object.assign(GY, { prev: 0, prev2: 0, rising: false, peak: 0, tFire: 0 });
+  useGyro = $("detSel").value === "gyro";
+  if (rec) recStart();
   goFullscreen(); trapBack();
   G.est = null;
   const lat = ctx.outputLatency || ctx.baseLatency; dbgLat = lat ? `ses gecikmesi ~${Math.round(lat * 1000)} ms` : ""; $("dbg").textContent = dbgLat;
   P.bpm = +$("tempo").value; P.vol = +$("pvol").value / 100;
-  $("setup").hidden = true; $("btnTry").hidden = true;
+  $("setup").hidden = true; $("btnTry").hidden = true; $("btnRec").hidden = true;
   $("btnStart").textContent = "Bitirmek için basılı tut"; $("btnStart").classList.add("stop");
   document.body.classList.add("live"); requestWake();
   startPulse();
@@ -364,12 +433,15 @@ function goLive(sensorOk){
       }
     }, 1200);
   }
-  setStatus("Çalıyor"); $("hint").textContent = "Nabzın üstüne vur. Hafif vuruş ince, sert vuruş derin çalar.";
+  setStatus(REC.on ? "Kayıt: 20 sn" : "Çalıyor");
+  $("hint").textContent = REC.on ? "Kayıt sürüyor: nabza uyarak, sana doğal gelen hareketle vur. 20 saniye sonra kendiliğinden biter." : "Nabzın üstüne vur. Hafif vuruş ince, sert vuruş derin çalar.";
+  if (useGyro && !gyroSeen) setTimeout(() => { if (S.live && !gyroSeen) $("dbg").textContent = "jiroskop verisi yok → ivme dedektörü"; }, 1500);
 }
 function stop(){
   S.live = false; touchMode = false; stopPulse(); document.body.classList.remove("live"); leaveFullscreen();
   try { wakeLock && wakeLock.release(); } catch(e){}
-  $("setup").hidden = false; $("btnTry").hidden = false;
+  $("setup").hidden = false; $("btnTry").hidden = false; $("btnRec").hidden = false;
+  recFinish();
   $("btnStart").textContent = "Başla"; $("btnStart").classList.remove("stop");
   pulseEl.textContent = ""; pulseEl.classList.remove("beat", "dum");
   setStatus(S.hits ? `${S.hits} vuruş` : "Hazır");
@@ -389,11 +461,12 @@ btn.addEventListener("pointerdown", e => {
   e.preventDefault(); holdStart = performance.now(); holdCancel(); holdT = requestAnimationFrame(holdTick);
 });
 ["pointerup", "pointercancel", "pointerleave"].forEach(ev => btn.addEventListener(ev, holdCancel));
-btn.addEventListener("click", e => { if (S.live || P.on){ e.preventDefault(); return; } start(); });
+btn.addEventListener("click", e => { if (S.live || P.on){ e.preventDefault(); return; } start(false); });
 // çalarken sayfanın geri kalanına dokunuş hiçbir şey yapmasın (kaydırma, yakınlaştırma, seçim dahil)
 document.addEventListener("touchmove", e => { if (S.live || P.on) e.preventDefault(); }, { passive: false });
 document.addEventListener("gesturestart", e => e.preventDefault());
 document.addEventListener("contextmenu", e => { if (S.live || P.on) e.preventDefault(); });
+$("btnRec").addEventListener("click", () => { if (!S.live && !P.on) start(true); });
 $("btnTry").addEventListener("click", () => { initAudio(); ctx.resume(); const v = Math.random() < 0.5 ? 0.3 : 0.95; hitSound(ctx.currentTime + 0.01, v); flashHit(v, null); });
 
 // dokunma modu (sensör yoksa): daireye dokun = vuruş; basılı süre kısa → hafif, uzun → sert değil, sabit orta-sert
@@ -406,6 +479,8 @@ $("pvol").addEventListener("input", e => { $("pvolOut").textContent = e.target.v
 $("sens").addEventListener("input", e => { $("sensOut").textContent = e.target.value; setSens(+e.target.value); try { localStorage.setItem("br-sens", e.target.value); } catch(err){} });
 try { const sv = localStorage.getItem("br-sens"); if (sv){ $("sens").value = sv; $("sensOut").textContent = sv; } } catch(e){}
 setSens(+$("sens").value);
+$("detSel").addEventListener("change", e => { try { localStorage.setItem("br-det", e.target.value); } catch(err){} });
+try { const dv = localStorage.getItem("br-det"); if (dv) $("detSel").value = dv; } catch(e){}
 
 /* ---- tarayıcı çubuğuna / geri tuşuna değen el: üç önlem ---- */
 // (a) Android: Başla dokunuşunda tam ekran (tarayıcı çubuğu kaybolur). iPhone Safari bunu desteklemez.
