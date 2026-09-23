@@ -226,8 +226,8 @@ const DET = {
   hitMin: 4.0,      // m/s²: duruş ivmesi alt sınırı
   hitCap: 5.5,      // m/s²: eşik ölçekle büyür ama bunu geçmez (sert vuruşlar hafifleri kilitlemesin)
   jerkMin: 3.5,     // m/s² / örnek: duruş ne kadar ani olmalı (savurma yavaş yükselir, çarpma sıçrar)
-  refractory: 120,  // ms: iki vuruş arası en az süre
-  tau: 90,          // ms: hareket yönü bu süreyle kayan ortalamadan izlenir (sürekli tazelenir, takılmaz)
+  refractory: 70,   // ms: iki vuruş arası en az süre (≈14 vuruş/sn; hızlı sallama sığsın)
+  tau: 45,          // ms: hareket yönü bu süreyle kayan ortalamadan izlenir (kısa: hızlı salınımda bulanıklaşmasın)
   runMax: 10,       // şiddet ölçeği: kendi kendine öğrenir, hızlı gevşer
   tFire: 0, prevMag: 0, tPrev: 0, flow: [0, 0, 0], peakTrack: 0, trackUntil: 0, lastPeak: 0
 };
