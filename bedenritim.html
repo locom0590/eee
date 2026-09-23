@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#14110f">
+<title>Beden Ritim</title>
+<style>
+  :root{
+    --bg:#14110f; --ink:#f3ece2; --mute:#9a8f82; --line:#2c2622;
+    --dum:#c0452f; --tek:#e0a83a; --ok:#5bb98c; --late:#e08a3a;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; height:100%; background:var(--bg); color:var(--ink);
+    font:16px/1.4 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; overscroll-behavior:none; }
+  body{ display:flex; flex-direction:column; min-height:100dvh; padding:max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); user-select:none; -webkit-user-select:none; }
+  header{ display:flex; align-items:baseline; justify-content:space-between; }
+  h1{ font-size:20px; font-weight:600; letter-spacing:.02em; margin:0; }
+  #status{ color:var(--mute); font-size:14px; }
+
+  /* nabız dairesi */
+  .stage{ flex:1; display:flex; align-items:center; justify-content:center; position:relative; min-height:260px; }
+  .ring{ position:absolute; width:min(72vw,320px); aspect-ratio:1; border-radius:50%; border:2px solid var(--line); }
+  .pulse{ width:min(58vw,260px); aspect-ratio:1; border-radius:50%; background:radial-gradient(circle at 40% 35%, #3a302a, #1d1814 70%);
+    display:flex; align-items:center; justify-content:center; transform:scale(.9); transition:transform 70ms ease-out;
+    box-shadow:0 0 0 0 rgba(224,168,58,0); font-size:64px; font-weight:700; color:var(--ink); }
+  .pulse.beat{ transform:scale(1); }
+  .pulse.dum{ transform:scale(1.06); }
+  .hit{ position:absolute; width:min(58vw,260px); aspect-ratio:1; border-radius:50%; pointer-events:none;
+    border:4px solid var(--tek); opacity:0; transform:scale(1); }
+  .hit.go{ animation:hitAnim 380ms ease-out; }
+  @keyframes hitAnim{ 0%{ opacity:.95; transform:scale(1);} 100%{ opacity:0; transform:scale(1.55);} }
+  .hint{ position:absolute; bottom:0; left:0; right:0; text-align:center; color:var(--mute); font-size:14px; padding:0 8px; }
+
+  /* ölçüler */
+  .stats{ display:flex; justify-content:space-around; text-align:center; margin:6px 0 14px; }
+  .stats b{ display:block; font-size:22px; font-weight:600; }
+  .stats span{ font-size:12px; color:var(--mute); text-transform:uppercase; letter-spacing:.06em; }
+  .vbar{ height:6px; border-radius:3px; background:var(--line); overflow:hidden; margin:0 0 14px; }
+  .vbar i{ display:block; height:100%; width:0; background:linear-gradient(90deg, var(--tek), var(--dum)); transition:width 60ms; }
+
+  /* ayarlar */
+  .row{ display:flex; align-items:center; gap:12px; margin:8px 0; }
+  .row label{ width:84px; font-size:14px; color:var(--mute); }
+  .row output{ width:56px; text-align:right; font-variant-numeric:tabular-nums; font-size:14px; }
+  input[type=range]{ flex:1; accent-color:var(--tek); height:32px; }
+  .chips{ display:flex; gap:8px; margin:8px 0 12px; }
+  .chip{ flex:1; padding:10px 6px; border-radius:12px; border:1px solid var(--line); background:transparent; color:var(--ink); font-size:14px; }
+  .chip[aria-pressed=true]{ background:#2a221c; border-color:var(--tek); }
+
+  button.big{ width:100%; padding:18px; border-radius:16px; border:0; font-size:19px; font-weight:600; color:#14110f; background:var(--tek); }
+  button.big.stop{ background:#3a2f28; color:var(--ink); }
+  button.ghost{ width:100%; margin-top:10px; padding:12px; border-radius:12px; border:1px solid var(--line); background:transparent; color:var(--mute); font-size:15px; }
+  .warn{ background:#3a2320; border:1px solid #6a3a33; color:#f3d9d4; padding:10px 12px; border-radius:12px; font-size:14px; margin-top:10px; }
+  [hidden]{ display:none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Beden Ritim</h1>
+  <div id="status">Hazır</div>
+</header>
+
+<div class="stage" id="stage">
+  <div class="ring"></div>
+  <div class="hit" id="hitRing"></div>
+  <div class="pulse" id="pulse"></div>
+  <div class="hint" id="hint">Telefonu beline tak ya da baget gibi elinde tut. Sesi hoparlörden ya da kablolu kulaklıktan ver; Bluetooth vuruşları geciktirir.</div>
+</div>
+
+<div class="stats">
+  <div><b id="sHits">0</b><span>vuruş</span></div>
+  <div><b id="sSync">–</b><span>nabza uyum</span></div>
+  <div><b id="sBpm">–</b><span>senin tempon</span></div>
+</div>
+<div class="vbar"><i id="vbar"></i></div>
+
+<div id="setup">
+  <div class="chips" id="chips">
+    <button class="chip" data-p="duz" aria-pressed="true">Düz 2/4</button>
+    <button class="chip" data-p="baladi" aria-pressed="false">Baladi 4/4</button>
+    <button class="chip" data-p="karsilama" aria-pressed="false">Karşılama 9/8</button>
+  </div>
+  <div class="row"><label for="tempo">Tempo</label><input id="tempo" type="range" min="60" max="180" value="100"><output id="tempoOut">100</output></div>
+  <div class="row"><label for="pvol">Nabız sesi</label><input id="pvol" type="range" min="0" max="100" value="55"><output id="pvolOut">55</output></div>
+</div>
+
+<button class="big" id="btnStart">Başla</button>
+<button class="ghost" id="btnTry">Sesi dene (vuruş sesi)</button>
+<div class="warn" id="warn" hidden></div>
+
+<script>
+/* ========= yardımcılar ========= */
+const $ = id => document.getElementById(id);
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const median = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
+
+/* ========= ses ========= */
+let ctx = null, master = null, noiseBuf = null;
+function initAudio(){
+  if (ctx) return;
+  ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" });
+  master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
+  const n = ctx.sampleRate * 1, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  noiseBuf = b;
+}
+function env(g, t, a, peak, dec){
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + a);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec);
+}
+function tone(t, f0, f1, glide, peak, dec, type){
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type || "sine"; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + glide);
+  env(g, t, 0.002, peak, dec); o.connect(g); g.connect(master); o.start(t); o.stop(t + dec + 0.05);
+}
+function burst(t, freq, q, peak, dec){
+  const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+  const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = freq; f.Q.value = q;
+  const g = ctx.createGain(); env(g, t, 0.001, peak, dec);
+  s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + dec + 0.05);
+}
+/* Kullanıcının tek sesi: şiddet (v: 0–1) tınıyı taşır — hafif → ince "tek", sert → derin "düm" */
+function hitSound(t, v){
+  const dum = v * v;                 // derin gövde sert vuruşta açılır
+  const tek = 0.95 - 0.45 * v;       // ince vuruş hafifte baskın, sertte geri çekilir
+  tone(t, 190 + 40 * v, 62, 0.12 + 0.08 * v, 0.95 * dum + 0.08, 0.22 + 0.22 * v);       // gövde
+  tone(t, 720, 430, 0.03, 0.55 * tek, 0.07, "triangle");                                 // deri
+  burst(t, 3200 - 900 * v, 1.6, 0.5 * tek + 0.15 * v, 0.045);                            // tık
+}
+/* Nabız sesleri: yumuşak bendir, kullanıcının vuruşunun altında kalsın */
+function pulseDum(t, vol){ tone(t, 120, 58, 0.16, 0.42 * vol, 0.24); burst(t, 900, 1, 0.08 * vol, 0.03); }
+function pulseTek(t, vol){ burst(t, 2400, 2.2, 0.22 * vol, 0.04); tone(t, 520, 380, 0.03, 0.10 * vol, 0.05, "triangle"); }
+
+/* ========= usuller (sekizlik konumlar) ========= */
+const PATTERNS = {
+  duz:       { len: 4, D: [0], T: [2] },                   // 2/4: düm . tek .
+  baladi:    { len: 8, D: [0, 1, 4], T: [3, 6] },          // 4/4: düm düm . tek düm . tek .
+  karsilama: { len: 9, D: [0, 4], T: [2, 6, 7] }           // 9/8: 2+2+2+3
+};
+let pattern = "duz";
+
+/* ========= nabız zamanlayıcısı (Web Audio saati) ========= */
+const P = { on: false, bpm: 100, vol: 0.55, eighth: 0.3, t0: 0, idx: 0, next: 0, timer: null, beatEvents: [] };
+function eighthDur(){ return 30 / P.bpm; }
+function startPulse(){
+  initAudio(); ctx.resume();
+  P.on = true; P.eighth = eighthDur(); P.t0 = ctx.currentTime + 0.12; P.next = P.t0; P.idx = 0; P.beatEvents = [];
+  clearInterval(P.timer); P.timer = setInterval(schedule, 25); schedule();
+}
+function stopPulse(){ P.on = false; clearInterval(P.timer); P.timer = null; }
+function schedule(){
+  if (!P.on) return;
+  const pat = PATTERNS[pattern];
+  while (P.next < ctx.currentTime + 0.12){
+    const pos = P.idx % pat.len, t = P.next;
+    const isD = pat.D.includes(pos), isT = pat.T.includes(pos);
+    if (P.vol > 0){ if (isD) pulseDum(t, P.vol); else if (isT) pulseTek(t, P.vol); }
+    P.beatEvents.push({ t, kind: isD ? "dum" : isT ? "tek" : "rest", bar: pos === 0 });
+    P.eighth = eighthDur();
+    P.next += P.eighth; P.idx++;
+  }
+  // görsel: sırası gelen olayları işle
+  const now = ctx.currentTime;
+  while (P.beatEvents.length && P.beatEvents[0].t <= now + 0.005){
+    const ev = P.beatEvents.shift(); flashBeat(ev);
+  }
+}
+/* En yakın sekizlik: geçmiş ve gelecekteki mesafe */
+function gridInfo(now){
+  const d = P.eighth, k = Math.round((now - P.t0) / d), near = P.t0 + k * d;
+  return { near, off: now - near, d };
+}
+
+/* ========= görsel ========= */
+const pulseEl = $("pulse"), hitRing = $("hitRing"), vbar = $("vbar");
+function flashBeat(ev){
+  if (ev.kind === "rest") return;
+  pulseEl.classList.remove("beat", "dum"); void pulseEl.offsetWidth;
+  pulseEl.classList.add(ev.kind === "dum" ? "dum" : "beat");
+  setTimeout(() => pulseEl.classList.remove("beat", "dum"), 90);
+}
+function flashHit(v, sync){
+  hitRing.style.borderColor = sync === null ? "var(--tek)" : sync ? "var(--ok)" : "var(--late)";
+  hitRing.style.borderWidth = (3 + 5 * v) + "px";
+  hitRing.classList.remove("go"); void hitRing.offsetWidth; hitRing.classList.add("go");
+  vbar.style.width = Math.round(v * 100) + "%";
+}
+
+/* ========= oturum / vuruş ========= */
+const S = { live: false, hits: 0, synced: 0, times: [], t0: 0 };
+function registerHit(v){
+  if (!S.live) return;
+  initAudio();
+  const now = ctx.currentTime;
+  let when = now, sync = null;
+  if (P.on){
+    const g = gridInfo(now);
+    // Vuruş nabzın hemen önündeyse ("erken"), sesi nabza yapıştır; geç kaldıysa hemen çal
+    const ahead = g.near - now;
+    if (ahead > 0 && ahead <= 0.045) when = g.near;
+    sync = Math.abs(g.off) <= 0.085 || (ahead > 0 && ahead <= 0.045);
+    if (sync) S.synced++;
+  }
+  hitSound(when, v);
+  S.hits++;
+  const pn = performance.now(); S.times.push(pn); if (S.times.length > 9) S.times.shift();
+  flashHit(v, sync);
+  $("sHits").textContent = S.hits;
+  $("sSync").textContent = P.on ? Math.round(100 * S.synced / S.hits) + "%" : "–";
+  if (S.times.length >= 4){
+    const iv = []; for (let i = 1; i < S.times.length; i++) iv.push(S.times[i] - S.times[i - 1]);
+    const m = median(iv); if (m > 0) $("sBpm").textContent = Math.round(60000 / m);
+  }
+}
+
+/* ========= sensör: tek soru — vuruş oldu mu, ne şiddette? ========= */
+const DET = {
+  arm: 2.6,        // m/s²: bu değeri aşınca tepe aranmaya başlanır
+  rearm: 1.4,      // yeniden kurulmak için altına inilmesi gereken değer
+  refractory: 110, // ms: iki vuruş arası en az süre
+  window: 40,      // ms: tepe için en fazla bekleme
+  runMax: 12,      // şiddet ölçeği: kendi kendine öğrenir
+  state: "idle", peak: 0, tArm: 0, tFire: 0, prev: 0, samples: 0, lastSample: 0
+};
+function detSample(mag, tMs){
+  DET.samples++; DET.lastSample = tMs;
+  if (DET.state === "cool"){ if (tMs - DET.tFire >= DET.refractory && mag < DET.rearm) DET.state = "idle"; DET.prev = mag; return; }
+  if (DET.state === "idle"){
+    if (mag >= DET.arm){ DET.state = "armed"; DET.peak = mag; DET.tArm = tMs; }
+    DET.prev = mag; return;
+  }
+  // armed: tepe geçildi mi ya da süre doldu mu?
+  DET.peak = Math.max(DET.peak, mag);
+  const falling = mag < DET.prev && DET.peak >= DET.arm;
+  if (falling || tMs - DET.tArm >= DET.window){
+    fireFromPeak(DET.peak, tMs);
+  }
+  DET.prev = mag;
+}
+function fireFromPeak(peak, tMs){
+  DET.state = "cool"; DET.tFire = tMs;
+  DET.runMax = Math.max(6, peak, DET.runMax * 0.985);   // yavaşça gevşer, sert vuruşla yükselir
+  const v = clamp((peak - DET.arm * 0.6) / (DET.runMax - DET.arm * 0.6), 0.08, 1);
+  registerHit(v);
+}
+let motionSeen = 0;
+function onMotion(e){
+  let m;
+  const a = e.acceleration;
+  if (a && a.x != null){ m = Math.hypot(a.x, a.y, a.z); }
+  else { const g = e.accelerationIncludingGravity; if (!g || g.x == null) return; m = Math.abs(Math.hypot(g.x, g.y, g.z) - 9.81); }
+  motionSeen++;
+  if (S.live) detSample(m, performance.now());
+}
+const hasTouch = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
+const inApp = /Instagram|FBAN|FBAV|WhatsApp|Line\/|Twitter|TikTok/i.test(navigator.userAgent);
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let listening = false;
+// Not: iPhone izin penceresini yalnızca dokunuşun hemen içinde, araya "await" girmeden çağrılırsa gösterir.
+// Bu yüzden bu fonksiyon tıklama işleyicisinin ilk işi olarak çağrılır ve izni her şeyden önce ister.
+async function ensureSensor(){
+  warn("");
+  if (!hasTouch){ warn("Bu cihazda hareket sensörü yok. Telefondan aç; bilgisayarda daireye dokunarak deneyebilirsin."); return false; }
+  let permP = null;
+  if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function"){
+    try { permP = DeviceMotionEvent.requestPermission(); } catch(e){ permP = Promise.resolve("error"); }
+  }
+  initAudio(); const resumeP = ctx.resume();
+  if (permP){
+    let r = "error"; try { r = await permP; } catch(e){}
+    if (r !== "granted"){
+      warn(inApp
+        ? "Sensör izni alınamadı: sayfa bir uygulamanın (Instagram, WhatsApp vb.) içindeki tarayıcıda açık. Menüden <strong>Safari'de aç</strong>'ı seçip tekrar dene."
+        : "Sensör izni verilmedi. iPhone reddedilen izni hatırlar: Safari'yi uygulama değiştiriciden yukarı kaydırarak <strong>tamamen kapat</strong>, yeniden aç ve tekrar dene. Çıkan pencerede <strong>İzin Ver</strong>'e dokun.");
+      return false;
+    }
+  }
+  try { await resumeP; } catch(e){}
+  if (!listening){ window.addEventListener("devicemotion", onMotion); listening = true; }
+  if (!motionSeen) await wait(1000);
+  if (!motionSeen){
+    warn(inApp
+      ? "Sensörden veri gelmiyor: sayfa bir uygulamanın içindeki tarayıcıda açık. Linki <strong>Safari veya Chrome</strong>'da aç."
+      : "Sensörden veri gelmiyor. Sayfanın <strong>https</strong> adresinden açıldığından emin ol, yenileyip tekrar dene; olmazsa daireye dokunarak deneyebilirsin.");
+    return false;
+  }
+  return true;
+}
+
+/* ========= akış ========= */
+let wakeLock = null, touchMode = false;
+async function requestWake(){ try { wakeLock = await navigator.wakeLock.request("screen"); } catch(e){} }
+function setStatus(s){ $("status").textContent = s; }
+function warn(msg){ const w = $("warn"); w.innerHTML = msg; w.hidden = !msg; }
+
+async function start(){
+  motionSeen = 0;
+  const ok = await ensureSensor();          // ilk iş: izin (araya await girmeden)
+  if (!ok && hasTouch) return;              // telefonda sensör yoksa başlama, uyarı ekranda
+  S.hits = 0; S.synced = 0; S.times = []; $("sHits").textContent = 0; $("sSync").textContent = "–"; $("sBpm").textContent = "–";
+  DET.state = "idle"; DET.runMax = 12;
+  P.bpm = +$("tempo").value; P.vol = +$("pvol").value / 100;
+  $("setup").hidden = true; $("btnTry").hidden = true;
+  $("btnStart").textContent = "Bitir"; $("btnStart").classList.add("stop");
+  requestWake();
+  startPulse();
+  // 2 saniye hazırlık: nabız çalar, vuruşlar henüz sayılmaz
+  setStatus("Hazırlan…"); $("hint").textContent = "Nabzı dinle. Telefonu yerine al.";
+  let n = 2; pulseEl.textContent = n;
+  const cd = setInterval(() => { n--; if (n > 0) pulseEl.textContent = n; else { clearInterval(cd); pulseEl.textContent = ""; goLive(ok); } }, 1000);
+}
+function goLive(sensorOk){
+  S.live = true; S.t0 = performance.now();
+  if (!sensorOk || motionSeen === 0){
+    setTimeout(() => {
+      if (S.live && motionSeen === 0){
+        touchMode = true;
+        warn(sensorOk ? "Hareket sensöründen veri gelmiyor. Bu sayfayı telefonda, <strong>https</strong> adresinden açmak gerekir." : "Hareket sensörüne izin verilmedi ya da bu cihazda yok.");
+        $("hint").textContent = "Deneme modu: vurmak için daireye dokun.";
+        setStatus("Dokunma modu");
+      }
+    }, 1200);
+  }
+  setStatus("Çalıyor"); $("hint").textContent = "Nabzın üstüne vur. Hafif vuruş ince, sert vuruş derin çalar.";
+}
+function stop(){
+  S.live = false; touchMode = false; stopPulse();
+  try { wakeLock && wakeLock.release(); } catch(e){}
+  $("setup").hidden = false; $("btnTry").hidden = false;
+  $("btnStart").textContent = "Başla"; $("btnStart").classList.remove("stop");
+  pulseEl.textContent = ""; pulseEl.classList.remove("beat", "dum");
+  setStatus(S.hits ? `${S.hits} vuruş` : "Hazır");
+  $("hint").textContent = "Telefonu beline tak ya da baget gibi elinde tut. Sesi hoparlörden ya da kablolu kulaklıktan ver; Bluetooth vuruşları geciktirir.";
+}
+$("btnStart").addEventListener("click", () => { S.live ? stop() : start(); });
+$("btnTry").addEventListener("click", () => { initAudio(); ctx.resume(); const v = Math.random() < 0.5 ? 0.3 : 0.95; hitSound(ctx.currentTime + 0.01, v); flashHit(v, null); });
+
+// dokunma modu (sensör yoksa): daireye dokun = vuruş; basılı süre kısa → hafif, uzun → sert değil, sabit orta-sert
+let touchT = 0;
+$("stage").addEventListener("pointerdown", e => { if (!S.live || !touchMode) return; touchT = performance.now(); registerHit(e.pointerType === "mouse" ? 0.8 : 0.7); });
+
+// ayarlar
+$("tempo").addEventListener("input", e => { $("tempoOut").textContent = e.target.value; P.bpm = +e.target.value; });
+$("pvol").addEventListener("input", e => { $("pvolOut").textContent = e.target.value; P.vol = +e.target.value / 100; });
+$("chips").addEventListener("click", e => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  pattern = b.dataset.p;
+  document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c === b ? "true" : "false"));
+  if (P.on){ P.idx = 0; }
+});
+// arka plana düşünce durdur (ses ve sensör kesilir)
+document.addEventListener("visibilitychange", () => { if (document.hidden && S.live) stop(); });
+</script>
+</body>
+</html>
