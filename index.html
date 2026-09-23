@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#14110f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Beden Ritim">
+<link rel="manifest" href='data:application/manifest+json,{"name":"Beden Ritim","short_name":"Beden Ritim","display":"fullscreen","orientation":"portrait","background_color":"%2314110f","theme_color":"%2314110f","start_url":"."}'>
 <title>Beden Ritim</title>
 <style>
   :root{
@@ -50,8 +55,11 @@
   .chip[aria-pressed=true]{ background:#2a221c; border-color:var(--tek); }
 
   button.big{ width:100%; padding:18px; border-radius:16px; border:0; font-size:19px; font-weight:600; color:#14110f; background:var(--tek); }
-  button.big.stop{ background:#3a2f28; color:var(--ink); }
+  button.big.stop{ --hold:0; color:var(--ink); touch-action:none;
+    background:linear-gradient(90deg, #6a4a2a calc(var(--hold) * 100%), #3a2f28 calc(var(--hold) * 100%)); }
+  body.live{ touch-action:none; }
   button.ghost{ width:100%; margin-top:10px; padding:12px; border-radius:12px; border:1px solid var(--line); background:transparent; color:var(--mute); font-size:15px; }
+  .note{ color:var(--mute); font-size:13px; margin:4px 0 10px; }
   .warn{ background:#3a2320; border:1px solid #6a3a33; color:#f3d9d4; padding:10px 12px; border-radius:12px; font-size:14px; margin-top:10px; }
   [hidden]{ display:none !important; }
 </style>
@@ -85,6 +93,8 @@
   </div>
   <div class="row"><label for="tempo">Tempo</label><input id="tempo" type="range" min="60" max="180" value="100"><output id="tempoOut">100</output></div>
   <div class="row"><label for="pvol">Nabız sesi</label><input id="pvol" type="range" min="0" max="100" value="55"><output id="pvolOut">55</output></div>
+  <div class="row"><label for="sens">Hassasiyet</label><input id="sens" type="range" min="1" max="5" value="3"><output id="sensOut">3</output></div>
+  <div class="note" id="homeNote" hidden>Tarayıcı düğmelerine el değmesin diye: paylaş menüsünden <strong>Ana Ekrana Ekle</strong> deyip oradan aç; çubuksuz, tam ekran çalışır.</div>
 </div>
 
 <button class="big" id="btnStart">Başla</button>
@@ -221,38 +231,46 @@ function registerHit(v){
    Bir vuruşta iki ivme dalgası olur: önce savurma (hareket yönünde), sonra duruş (ters yönde, çok ani).
    Ses yalnızca ikincide çıkar: savurma tek başına, yavaş hareketler ve yürüme sallantısı ses vermez.
    Duruş ilk örnekte yakalanır (bekleme yok); şiddet, savurmanın gücünden okunur. Yön ve tutuş fark etmez. */
+/* Sabit eşikler — kendi kendine öğrenen ölçek YOK: ilk dakika nasılsa onuncu dakika da öyle.
+   "Hassasiyet" kaydırıcısı (1–5) tüm eşikleri birlikte ölçekler: 1 = en tok (sadece sert duruşlar), 5 = en hassas. */
+const SENS = [1.6, 1.25, 1.0, 0.8, 0.62];   // eşik çarpanı; 3 = temel değerler
 const DET = {
-  swingMin: 1.2,    // m/s²: "hareket var" sayılması için (akış vektörünün büyüklüğü)
-  hitMin: 4.0,      // m/s²: duruş ivmesi alt sınırı
-  hitCap: 5.5,      // m/s²: eşik ölçekle büyür ama bunu geçmez (sert vuruşlar hafifleri kilitlemesin)
-  jerkMin: 3.5,     // m/s² / örnek: duruş ne kadar ani olmalı (savurma yavaş yükselir, çarpma sıçrar)
+  swingMin0: 1.2,   // m/s²: "hareket var" sayılması için (akış vektörünün büyüklüğü)
+  hitMin0: 4.0,     // m/s²: duruş ivmesi alt sınırı
+  jerkMin0: 3.5,    // m/s² / örnek: duruş ne kadar ani olmalı (savurma yavaş yükselir, çarpma sıçrar)
+  scale: 16,        // m/s²: şiddet 1.0 sayılan vuruş (sabit; tını buna göre hafif→sert)
   refractory: 70,   // ms: iki vuruş arası en az süre (≈14 vuruş/sn; hızlı sallama sığsın)
   tau: 45,          // ms: hareket yönü bu süreyle kayan ortalamadan izlenir (kısa: hızlı salınımda bulanıklaşmasın)
-  runMax: 10,       // şiddet ölçeği: kendi kendine öğrenir, hızlı gevşer
-  tFire: 0, prevMag: 0, tPrev: 0, flow: [0, 0, 0], peakTrack: 0, trackUntil: 0, lastPeak: 0
+  k: 1.0, tFire: 0, prevA: [0, 0, 0], prevA2: [0, 0, 0], tPrev: 0, flow: [0, 0, 0], peakTrack: 0, trackUntil: 0, lastPeak: 0
 };
+function setSens(level){ DET.k = SENS[clamp(level, 1, 5) - 1]; }
 function detSample(ax, ay, az, tMs){
-  const mag = Math.hypot(ax, ay, az), jerk = mag - DET.prevMag; DET.prevMag = mag;
+  const mag = Math.hypot(ax, ay, az), pv = DET.prevA;
+  const pv2 = DET.prevA2, jerk1 = Math.hypot(ax - pv[0], ay - pv[1], az - pv[2]), jerk2 = Math.hypot(ax - pv2[0], ay - pv2[1], az - pv2[2]) / 1.4;
+  const jerk = Math.max(jerk1, jerk2); DET.prevA2 = pv; DET.prevA = [ax, ay, az];   // vektörel ani değişim, 1 ve 2 örnek üzerinden (örnekleme fazına bağlı kalmasın)
   const dt = DET.tPrev ? clamp(tMs - DET.tPrev, 4, 60) : 16; DET.tPrev = tMs;
-  // vuruş sonrası 70 ms: gerçek tepeyi izle, ölçeği ona göre öğren; bu sırada akış sıfırda kalır (geri sekme vuruş sayılmasın)
+  // vuruş sonrası 35 ms: gerçek tepeyi yalnızca ekrandaki tanı satırı için izle (ses ve eşikler bundan etkilenmez)
   if (DET.trackUntil){
-    if (tMs < DET.trackUntil){ DET.peakTrack = Math.max(DET.peakTrack, mag); return; }
-    DET.lastPeak = Math.min(40, DET.peakTrack); DET.runMax = clamp(Math.max(DET.lastPeak, DET.runMax * 0.96), 6, 40); DET.trackUntil = 0;
-    $("dbg").textContent = `son vuruş ${DET.lastPeak.toFixed(1)} m/s² · ölçek ${DET.runMax.toFixed(1)} · ${dbgLat}`;
+    if (tMs < DET.trackUntil) DET.peakTrack = Math.max(DET.peakTrack, mag);
+    else {
+      DET.lastPeak = DET.peakTrack; DET.trackUntil = 0;
+      $("dbg").textContent = `son vuruş ${DET.lastPeak.toFixed(1)} m/s² · eşik ${(DET.hitMin0 * DET.k).toFixed(1)} · ${dbgLat}`;
+    }
   }
   const f = DET.flow, fmag = Math.hypot(f[0], f[1], f[2]);
-  if (tMs - DET.tFire >= DET.refractory && fmag >= DET.swingMin){
+  if (tMs - DET.tFire >= DET.refractory && fmag >= DET.swingMin0 * DET.k){
     const dot = (ax * f[0] + ay * f[1] + az * f[2]) / fmag;   // + hareket yönünde, − hareketin tersine
-    const hitT = Math.min(DET.hitCap, Math.max(DET.hitMin, 0.25 * DET.runMax));
-    if (dot <= -hitT && (jerk >= DET.jerkMin || mag >= 2 * hitT)){
+    const hitT = DET.hitMin0 * DET.k, jerkT = DET.jerkMin0 * DET.k;
+    if (dot <= -hitT && (jerk >= jerkT || mag >= 2 * hitT)){
       // hareketin tersine, sert ve ani: duruş = vuruş — hemen çal
-      DET.tFire = tMs; DET.trackUntil = tMs + 70; DET.peakTrack = mag;
-      const v = clamp(Math.max(fmag * 1.8, mag) / DET.runMax, 0.1, 1);
-      DET.flow = [0, 0, 0];
+      DET.tFire = tMs; DET.trackUntil = tMs + 35; DET.peakTrack = mag;
+      const v = clamp(Math.max(fmag * 1.8, mag, jerk * 1.2) / DET.scale, 0.15, 1);
+      // akışı sıfırlamak yerine duruş yönüne çevir: geri dönüş hareketi aynı yönde sürer, bir sonraki duruş hemen yakalanır
+      DET.flow = [ax * 0.6, ay * 0.6, az * 0.6];
       registerHit(v); return;
     }
   }
-  // akış: son ~90 ms'nin kayan ortalaması — yön sürekli güncel kalır
+  // akış: son ~45 ms'nin kayan ortalaması — yön sürekli güncel kalır
   const k = 1 - Math.exp(-dt / DET.tau);
   f[0] += k * (ax - f[0]); f[1] += k * (ay - f[1]); f[2] += k * (az - f[2]);
 }
@@ -320,13 +338,14 @@ async function start(){
   if (!ok && hasTouch) return;              // telefonda sensör yoksa başlama, uyarı ekranda
   initAudio(); try { await ctx.resume(); } catch(e){}
   S.hits = 0; S.synced = 0; S.times = []; $("sHits").textContent = 0; $("sSync").textContent = "–"; $("sBpm").textContent = "–";
-  Object.assign(DET, { runMax: 10, tFire: 0, prevMag: 0, tPrev: 0, flow: [0, 0, 0], peakTrack: 0, trackUntil: 0, lastPeak: 0 });
+  Object.assign(DET, { tFire: 0, prevA: [0, 0, 0], prevA2: [0, 0, 0], tPrev: 0, flow: [0, 0, 0], peakTrack: 0, trackUntil: 0, lastPeak: 0 });
+  goFullscreen(); trapBack();
   G.est = null;
   const lat = ctx.outputLatency || ctx.baseLatency; dbgLat = lat ? `ses gecikmesi ~${Math.round(lat * 1000)} ms` : ""; $("dbg").textContent = dbgLat;
   P.bpm = +$("tempo").value; P.vol = +$("pvol").value / 100;
   $("setup").hidden = true; $("btnTry").hidden = true;
-  $("btnStart").textContent = "Bitir"; $("btnStart").classList.add("stop");
-  requestWake();
+  $("btnStart").textContent = "Bitirmek için basılı tut"; $("btnStart").classList.add("stop");
+  document.body.classList.add("live"); requestWake();
   startPulse();
   // 2 saniye hazırlık: nabız çalar, vuruşlar henüz sayılmaz
   setStatus("Hazırlan…"); $("hint").textContent = "Nabzı dinle. Telefonu yerine al.";
@@ -348,7 +367,7 @@ function goLive(sensorOk){
   setStatus("Çalıyor"); $("hint").textContent = "Nabzın üstüne vur. Hafif vuruş ince, sert vuruş derin çalar.";
 }
 function stop(){
-  S.live = false; touchMode = false; stopPulse();
+  S.live = false; touchMode = false; stopPulse(); document.body.classList.remove("live"); leaveFullscreen();
   try { wakeLock && wakeLock.release(); } catch(e){}
   $("setup").hidden = false; $("btnTry").hidden = false;
   $("btnStart").textContent = "Başla"; $("btnStart").classList.remove("stop");
@@ -356,7 +375,25 @@ function stop(){
   setStatus(S.hits ? `${S.hits} vuruş` : "Hazır");
   $("hint").textContent = "Telefonu beline tak ya da baget gibi elinde tut. Sesi hoparlörden ya da kablolu kulaklıktan ver; Bluetooth vuruşları geciktirir.";
 }
-$("btnStart").addEventListener("click", () => { S.live ? stop() : start(); });
+// Başla: tek dokunuş. Bitir: 1 saniye basılı tutma — çalarken yanlışlıkla ekrana gelen el oturumu kesmesin.
+const HOLD_MS = 1000; let holdT = null, holdStart = 0;
+const btn = $("btnStart");
+function holdCancel(){ if (holdT){ cancelAnimationFrame(holdT); holdT = null; } btn.style.setProperty("--hold", "0"); }
+function holdTick(){
+  const p = Math.min(1, (performance.now() - holdStart) / HOLD_MS);
+  btn.style.setProperty("--hold", p.toFixed(3));
+  if (p >= 1){ holdT = null; holdCancel(); stop(); } else holdT = requestAnimationFrame(holdTick);
+}
+btn.addEventListener("pointerdown", e => {
+  if (!S.live && !P.on) return;                 // hazır durumdayken normal click çalışır
+  e.preventDefault(); holdStart = performance.now(); holdCancel(); holdT = requestAnimationFrame(holdTick);
+});
+["pointerup", "pointercancel", "pointerleave"].forEach(ev => btn.addEventListener(ev, holdCancel));
+btn.addEventListener("click", e => { if (S.live || P.on){ e.preventDefault(); return; } start(); });
+// çalarken sayfanın geri kalanına dokunuş hiçbir şey yapmasın (kaydırma, yakınlaştırma, seçim dahil)
+document.addEventListener("touchmove", e => { if (S.live || P.on) e.preventDefault(); }, { passive: false });
+document.addEventListener("gesturestart", e => e.preventDefault());
+document.addEventListener("contextmenu", e => { if (S.live || P.on) e.preventDefault(); });
 $("btnTry").addEventListener("click", () => { initAudio(); ctx.resume(); const v = Math.random() < 0.5 ? 0.3 : 0.95; hitSound(ctx.currentTime + 0.01, v); flashHit(v, null); });
 
 // dokunma modu (sensör yoksa): daireye dokun = vuruş; basılı süre kısa → hafif, uzun → sert değil, sabit orta-sert
@@ -366,6 +403,26 @@ $("stage").addEventListener("pointerdown", e => { if (!S.live || !touchMode) ret
 // ayarlar
 $("tempo").addEventListener("input", e => { $("tempoOut").textContent = e.target.value; P.bpm = +e.target.value; });
 $("pvol").addEventListener("input", e => { $("pvolOut").textContent = e.target.value; P.vol = +e.target.value / 100; });
+$("sens").addEventListener("input", e => { $("sensOut").textContent = e.target.value; setSens(+e.target.value); try { localStorage.setItem("br-sens", e.target.value); } catch(err){} });
+try { const sv = localStorage.getItem("br-sens"); if (sv){ $("sens").value = sv; $("sensOut").textContent = sv; } } catch(e){}
+setSens(+$("sens").value);
+
+/* ---- tarayıcı çubuğuna / geri tuşuna değen el: üç önlem ---- */
+// (a) Android: Başla dokunuşunda tam ekran (tarayıcı çubuğu kaybolur). iPhone Safari bunu desteklemez.
+const standalone = window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches || navigator.standalone === true;
+function goFullscreen(){
+  if (standalone) return;
+  const el = document.documentElement, fn = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (fn){ try { const r = fn.call(el, { navigationUI: "hide" }); if (r && r.catch) r.catch(() => {}); } catch(e){} }
+}
+function leaveFullscreen(){ const fn = document.exitFullscreen || document.webkitExitFullscreen; if (fn && (document.fullscreenElement || document.webkitFullscreenElement)){ try { const r = fn.call(document); if (r && r.catch) r.catch(() => {}); } catch(e){} } }
+// (b) Geri tuşu: çalarken geçmişe kendi kaydımızı koyarız; geri basılırsa sayfada kalır, oturum sürer.
+let trapped = false;
+function trapBack(){ if (trapped) return; try { history.pushState({ br: 1 }, ""); history.pushState({ br: 2 }, ""); trapped = true; } catch(e){} }
+window.addEventListener("popstate", () => { if (S.live || P.on){ try { history.pushState({ br: 2 }, ""); } catch(e){} } });
+// (c) iPhone: ana ekrana ekleme ipucu (Safari'de, henüz eklenmemişse)
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+if (isIOS && !standalone) $("homeNote").hidden = false;
 $("chips").addEventListener("click", e => {
   const b = e.target.closest(".chip"); if (!b) return;
   pattern = b.dataset.p;
