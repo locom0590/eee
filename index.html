@@ -1,0 +1,1204 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1A1D33">
+<title>Yürüyen Orkestra · Anadolu kiti</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,500;0,800;1,500&family=Alegreya+Sans:wght@400;500;700&display=swap">
+<style>
+:root{
+  color-scheme:dark;
+  --indigo:#1A1D33; --indigo-2:#222743; --indigo-3:#2C3254; --line:#434A7A;
+  --wool:#EDE3CF; --wool-dim:#B9B09B;
+  --darbuka:#D8553E; --def:#4DB8AD; --bendir:#CF9A63; --davul:#8A9EEA; --kasik:#E6B645; --zil:#E56C90;
+  --madder:#A8352A;
+  --f-display:"Alegreya", Georgia, "Times New Roman", serif;
+  --f-body:"Alegreya Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;min-height:100%;background:var(--indigo);color:var(--wool);font:17px/1.5 var(--f-body);-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+.app{max-width:560px;margin:0 auto;padding:22px 18px 40px;display:flex;flex-direction:column;gap:26px}
+
+header h1{font-family:var(--f-display);font-weight:800;font-size:clamp(36px,11vw,50px);line-height:.95;letter-spacing:-.01em;margin:0}
+header .set{margin:6px 0 0;font-family:var(--f-display);font-style:italic;font-size:20px;color:var(--wool-dim)}
+header .status{margin:10px 0 0;font-size:15px;color:var(--wool-dim)}
+header .status b{color:var(--kasik);font-weight:700}
+h2{font-family:var(--f-display);font-weight:500;font-style:italic;font-size:23px;margin:0}
+
+/* mod seçimi */
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.modes button{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:12px 14px;font-size:19px;font-family:var(--f-display);font-weight:800}
+.modes button small{font-family:var(--f-body);font-weight:500;font-size:14px;color:var(--wool-dim);line-height:1.25}
+.modes button[aria-pressed="true"]{border-color:var(--kasik);background:color-mix(in srgb,var(--kasik) 14%,var(--indigo-3))}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seg button{padding:11px 8px}
+.seg button[aria-pressed="true"]{border-color:var(--kasik);color:var(--kasik)}
+
+/* dokuma tezgâhı: canlı vuruş şeridi */
+.loom{position:relative;background:var(--indigo-2);padding:16px 12px;display:grid;grid-template-columns:auto 1fr;column-gap:10px;border-radius:2px}
+.loom::before,.loom::after{content:"";position:absolute;left:0;right:0;height:8px;background-repeat:repeat-x}
+.loom::before{top:0;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='8'><path d='M0 0h14L7 8z' fill='%23A8352A'/><circle cx='7' cy='2.2' r='1.3' fill='%23E6B645'/></svg>")}
+.loom::after{bottom:0;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='8'><path d='M0 8h14L7 0z' fill='%23A8352A'/><circle cx='7' cy='5.8' r='1.3' fill='%23E6B645'/></svg>")}
+.lanes{display:grid;grid-template-rows:repeat(6,1fr);font-size:14px;font-weight:500}
+.lanes span{display:flex;align-items:center;gap:6px;color:var(--wool-dim);transition:color .15s}
+.lanes span i{width:8px;height:8px;transform:rotate(45deg);background:var(--c);opacity:.45;flex:none}
+.lanes span.on{color:var(--c)}
+.lanes span.on i{opacity:1}
+canvas#roll{width:100%;height:216px;display:block}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat .k{font-size:14px;color:var(--wool-dim)}
+.stat .v{font-family:var(--f-display);font-weight:500;font-size:30px;line-height:1.05;font-variant-numeric:tabular-nums lining-nums}
+.stat .v small{display:block;font-family:var(--f-body);font-size:13px;color:var(--wool-dim);line-height:1.2}
+
+.intro{margin:0;max-width:60ch}
+.intro strong{font-weight:700}
+.note{margin:8px 0 0;font-size:15px;color:var(--wool-dim)}
+.warn{margin:12px 0 0;padding:10px 12px;border-left:3px solid var(--darbuka);background:rgba(216,85,62,.1);font-size:15px}
+
+button{font:700 16px/1.2 var(--f-body);border-radius:10px;border:1px solid var(--line);background:var(--indigo-3);color:var(--wool);padding:14px 12px;cursor:pointer;touch-action:manipulation}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--kasik);outline-offset:2px}
+button:disabled{opacity:.5;cursor:default}
+button.primary{background:var(--madder);border-color:var(--madder);font-size:20px;padding:18px;width:100%}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+button.toggle[aria-pressed="true"]{border-color:var(--def);color:var(--def)}
+
+section.block{border-top:1px solid var(--line);padding-top:18px;display:flex;flex-direction:column;gap:12px}
+section.block > .note{margin:0}
+
+/* kit kurucusu */
+.presets{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.presets button{padding:11px 8px;font-size:15px}
+.slots{list-style:none;margin:0;padding:0}
+.slot{display:grid;grid-template-columns:20px 1fr minmax(148px,47%);align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(67,74,122,.6)}
+.slot .key{font-family:var(--f-display);font-size:18px;color:var(--wool-dim);text-align:center}
+.slot-name{font-weight:700;line-height:1.2}
+.slot-sub{font-size:14px;color:var(--wool-dim);line-height:1.25}
+.slot-pick{display:flex;gap:6px;align-items:center;min-width:0}
+.slot select{flex:1;min-width:0;font:500 16px/1.2 var(--f-body);color:var(--wool);background:var(--indigo-3);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:8px;padding:10px 8px;-webkit-appearance:none;appearance:none}
+.slot.empty select{color:var(--wool-dim);font-style:italic}
+.play{width:40px;height:40px;padding:0;border-radius:50%;flex:none;font-size:12px}
+
+/* slot testi */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cell{border:1px solid var(--line);border-left:5px solid var(--c);border-radius:8px;padding:8px 10px;display:grid;grid-template-columns:1fr auto;column-gap:8px;background:var(--indigo-2);transition:background .35s}
+.cell.lit{background:color-mix(in srgb,var(--c) 45%,var(--indigo-2));transition:none}
+.c-name{font-weight:700;line-height:1.25}
+.c-snd{grid-column:1;font-size:14px;color:var(--wool-dim);line-height:1.25}
+.c-n{grid-row:1/span 2;grid-column:2;align-self:center;font-family:var(--f-display);font-size:26px;font-variant-numeric:tabular-nums lining-nums}
+.test-msg{margin:0;font-family:var(--f-display);font-size:20px}
+.test-log{margin:0;font-size:15px;color:var(--wool-dim);min-height:1.5em}
+
+/* sensörsüz deneme */
+.pads{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pads button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border-left:5px solid var(--c);padding:11px 12px}
+.pads button small{font-weight:500;font-size:14px;color:var(--wool-dim)}
+.pads button:active{background:color-mix(in srgb,var(--c) 30%,var(--indigo-3))}
+
+details{border-top:1px solid var(--line);padding-top:14px}
+summary{cursor:pointer;font-weight:700}
+.set-row{margin-top:14px;display:flex;flex-direction:column;gap:6px}
+.set-row input[type=range]{width:100%;accent-color:var(--darbuka)}
+.set-row .ends{display:flex;justify-content:space-between;gap:12px;font-size:14px;color:var(--wool-dim)}
+.set-row .ends span:last-child{text-align:right}
+.check{display:flex;gap:10px;align-items:center;margin-top:16px}
+.check input{width:22px;height:22px;accent-color:var(--darbuka)}
+
+.end{display:flex;flex-direction:column;gap:14px}
+canvas#kilim{width:100%;height:230px;display:block;border-radius:2px}
+.end audio{width:100%}
+.links{display:flex;gap:18px;flex-wrap:wrap}
+.links a{color:var(--kasik);font-weight:700}
+
+/* bel modu */
+.pocket{position:fixed;inset:0;z-index:10;background:#12142A;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;padding:24px;text-align:center;padding-top:calc(24px + env(safe-area-inset-top,0px));padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))}
+.pocket .flash{position:absolute;inset:0;background:var(--c,transparent);opacity:0;transition:opacity .35s;pointer-events:none}
+.pocket .flash.hit{opacity:.32;transition:none}
+.pocket .big{position:relative;font-family:var(--f-display);font-weight:800;font-size:clamp(56px,20vw,110px);line-height:1;color:var(--kasik);font-variant-numeric:tabular-nums}
+.pocket p{position:relative;margin:0;color:var(--wool-dim);max-width:30ch;font-size:18px}
+.hold{position:relative;overflow:hidden;background:transparent;color:var(--wool-dim);padding:16px 24px}
+.hold i{position:absolute;inset:0;background:var(--kasik);opacity:.25;transform-origin:left;transform:scaleX(0)}
+.hold span{position:relative}
+/* baget sahnesi */
+.stage{position:fixed;inset:0;z-index:10;background:#12142A;display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:16px;text-align:center;padding:calc(20px + env(safe-area-inset-top,0px)) 20px calc(20px + env(safe-area-inset-bottom,0px));touch-action:none}
+.stage .flash{position:absolute;inset:0;background:var(--c,transparent);opacity:0;transition:opacity .3s;pointer-events:none}
+.stage .flash.hit{opacity:.28;transition:none}
+.st-msg{position:relative;margin:0;font-family:var(--f-display);font-size:22px;max-width:28ch}
+.zones{position:relative;display:grid;grid-template-rows:repeat(3,1fr);gap:8px;width:min(260px,70vw)}
+.zones span{border:1px solid var(--line);border-radius:10px;padding:12px;font-weight:700;font-size:18px;color:var(--wool-dim);transition:background .12s,color .12s}
+.zones span.on{background:color-mix(in srgb,var(--kasik) 30%,var(--indigo-3));border-color:var(--kasik);color:var(--wool)}
+.st-pose{position:relative;margin:0;font-size:16px;color:var(--wool-dim);min-height:1.5em}
+.st-hit{position:relative;font-family:var(--f-display);font-weight:800;font-size:clamp(34px,11vw,56px);line-height:1.05;color:var(--c,var(--wool));min-height:1.1em}
+.st-end{position:relative;width:100%;max-width:360px;overflow:hidden;border:1px solid var(--line);border-radius:10px;padding:14px;color:var(--wool-dim);font-size:15px}
+.st-end i{position:absolute;inset:0;background:var(--kasik);opacity:.25;transform-origin:left;transform:scaleX(0)}
+.st-end span{position:relative}
+@media (prefers-reduced-motion:reduce){.lanes span,.pocket .flash,.stage .flash,.cell,.zones span{transition:none}}
+.row.three{grid-template-columns:repeat(3,1fr)}
+.row.three button{font-size:14px;padding:12px 6px}
+@media (max-width:440px){
+  .slot{grid-template-columns:18px 1fr;row-gap:8px}
+  .slot-pick{grid-column:2}
+}
+@media (max-width:380px){ .stat .v{font-size:25px} }
+</style>
+</head>
+<body>
+<main class="app">
+  <header>
+    <h1>Yürüyen Orkestra</h1>
+    <p class="set">Anadolu kiti: on hareket, istediğin sesler</p>
+    <p class="status" id="status">Hazır</p>
+  </header>
+
+  <div class="modes" role="group" aria-label="Çalma biçimi">
+    <button type="button" data-mode="bel" aria-pressed="true">Bel<small>Telefon belinde; bedenle dans</small></button>
+    <button type="button" data-mode="baget" aria-pressed="false">Baget<small>Telefon elinde; havada vuruş</small></button>
+  </div>
+
+  <section class="loom" aria-label="Canlı vuruşlar">
+    <div class="lanes" id="lanes"></div>
+    <canvas id="roll" aria-hidden="true"></canvas>
+  </section>
+
+  <section class="stats" aria-label="Canlı ölçümler">
+    <div class="stat"><div class="k">Vuruş</div><div class="v" id="sHits">0</div></div>
+    <div class="stat"><div class="k">Tempo</div><div class="v"><span id="sTempo">–</span><small id="tempoUnit">basış/dk</small></div></div>
+    <div class="stat"><div class="k" id="shakeLabel">Titreme</div><div class="v"><span id="sShake">0</span><small>yüzde</small></div></div>
+    <div class="stat"><div class="k">Usul</div><div class="v"><span id="sUsul">–</span><small id="sUsulSub">&nbsp;</small></div></div>
+  </section>
+
+  <section id="startPanel">
+    <p class="intro" id="introText"></p>
+    <div style="margin-top:18px">
+      <button class="primary" id="btnStart"></button>
+      <p class="note" id="startNote"></p>
+      <p class="warn" id="sensorWarn" hidden></p>
+    </div>
+  </section>
+
+  <section class="end" id="endPanel" hidden>
+    <h2>Bu dansın kilimi</h2>
+    <canvas id="kilim" aria-label="Dansın vuruşlarından dokunan kilim"></canvas>
+    <p class="note" id="kilimKey" style="margin:0"></p>
+    <div class="stats" id="endStats"></div>
+    <audio id="player" controls></audio>
+    <p class="note" id="recNote" style="margin:0"></p>
+    <div class="links"><a id="dlAudio" hidden>Kaydı indir</a><a id="dlKilim" hidden>Kilimi indir</a></div>
+    <button id="btnAgain">Yeni dans</button>
+  </section>
+
+  <section class="block" id="kitPanel">
+    <h2>Kitin</h2>
+    <p class="note">Her harekete listeden bir ses ata ya da boş bırak. Düzenin bu telefonda kayıtlı kalır.</p>
+    <div class="presets" id="presets"></div>
+    <ul class="slots" id="slotList"></ul>
+  </section>
+
+  <section class="block" id="testPanel">
+    <h2>Slot testi</h2>
+    <p class="note" id="testNote"></p>
+    <button id="btnTest">Slot testini başlat</button>
+    <p class="warn" id="testWarn" hidden></p>
+    <div id="testLive" hidden style="display:flex;flex-direction:column;gap:12px">
+      <p class="test-msg" id="testMsg"></p>
+      <p class="test-log" id="testZone" hidden></p>
+      <p class="test-log" id="testLog"></p>
+      <div class="grid" id="testGrid"></div>
+      <div class="row three"><button id="btnTestReset">Sayaçları sıfırla</button><button id="btnFlip">Sağ ile solu çevir</button><button id="btnTestEnd">Testi bitir</button></div>
+    </div>
+  </section>
+
+  <section class="block" id="simPanel">
+    <h2>Sensörsüz dene</h2>
+    <div class="pads" id="pads"></div>
+    <div class="row three"><button class="toggle" id="pAuto" aria-pressed="false">9/8 örneği</button><button id="pEnd">Bitir ve dinle</button><button id="pClear">Temizle</button></div>
+    <p class="note" style="margin:0" id="simNote"></p>
+  </section>
+
+  <details id="settings">
+    <summary>Ayarlar</summary>
+    <div id="setBel">
+    <div class="set-row">
+      <label for="bias">Sert basış için gereken güç</label>
+      <input type="range" id="bias" min="0.7" max="1.4" step="0.05">
+      <div class="ends"><span>Hafif basış da sert sayılır</span><span>Daha sert basmak gerekir</span></div>
+    </div>
+    <div class="set-row">
+      <label for="bounce">Yaylanma ile basışın ayrımı</label>
+      <input type="range" id="bounce" min="40" max="120" step="5">
+      <div class="ends"><span>Daha çok yaylanma sayılır</span><span>Daha çok basış sayılır</span></div>
+    </div>
+    <label class="check"><input type="checkbox" id="flip"> Sağ ile solu çevir</label>
+    </div>
+    <div id="setBaget" hidden>
+      <div class="set-row">
+        <span>Hangi elle çalıyorsun?</span>
+        <div class="seg"><button type="button" data-hand="1">Sağ el</button><button type="button" data-hand="-1">Sol el</button></div>
+        <p class="note" style="margin:0">Sol el seçilince sağa ve sola vuruşlar yer değiştirir; böylece dışa doğru vuruş iki elde de aynı sesi çalar.</p>
+      </div>
+      <div class="set-row">
+        <label for="sens">Vuruş hassasiyeti</label>
+        <input type="range" id="sens" min="0.6" max="1.6" step="0.05">
+        <div class="ends"><span>Sadece sert vuruşlar</span><span>Hafif vuruşlar da</span></div>
+      </div>
+      <div class="set-row">
+        <label for="zone">Bölge sınırı: <b id="zoneVal"></b></label>
+        <input type="range" id="zone" min="12" max="45" step="1">
+        <div class="ends"><span>Orta bölge dar</span><span>Orta bölge geniş</span></div>
+      </div>
+    </div>
+    <p class="note" id="meter">Son vuruş: –</p>
+  </details>
+</main>
+
+<div class="pocket" id="pocket" hidden>
+  <div class="flash" id="flash"></div>
+  <div class="big" id="pBig">5</div>
+  <p id="pMsg">Telefonu yerleştir. Sonra dik ve hareketsiz dur.</p>
+  <button class="hold" id="btnHold"><i id="holdBar"></i><span>Bitirmek için 2 saniye basılı tut</span></button>
+</div>
+
+<div class="stage" id="stage" hidden>
+  <div class="flash" id="stFlash"></div>
+  <p class="st-msg" id="stMsg"></p>
+  <div class="zones" id="zones"><span data-z="yuksek">Yüksek</span><span data-z="orta">Orta</span><span data-z="alcak">Alçak</span></div>
+  <p class="st-pose" id="stPose">&nbsp;</p>
+  <div class="st-hit" id="stHit">&nbsp;</div>
+  <div class="st-end"><i id="stHold"></i><span>Bitirmek için iki parmakla 2 saniye basılı tut</span></div>
+</div>
+
+<!-- hareket algılayıcılar: bel (pelvis) ve baget (el) -->
+<script id="detector">
+function makeDetector(cb){
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const norm = v => { const m = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / m, v[1] / m, v[2] / m]; };
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const D = { G: 9.81, gl0: null, light: 3.2, hard: 8.5, bias: 1, bounceMs: 65, right: [1, 0, 0], flip: 1 };
+  function reset(){
+    Object.assign(D, { gl: D.gl0 ? D.gl0.slice() : null, lastT: 0,
+      sm: 0, lowT: 0, rising: false, armed: true, peak: 0, peakT: 0, riseT: 0, lastStep: 0, latSum: 0,
+      airStart: 0, lastJump: 0,
+      unloadStart: 0, vel: 0, armDrop: 0, armVel: 0, lastDrop: 0,
+      buf: [], lastSign: [0, 0, 0], shimmyUntil: 0, rms: 0, intensity: 0,
+      yaw: 0, yawQuiet: 0, lastTurn: 0,
+      hArmed: true, hRising: false, hPeak: 0, hRiseT: 0, hVd: 0, lastHip: 0 });
+  }
+  reset();
+  const threshold = () => Math.sqrt(D.light * D.hard) * D.bias;
+  function learn(p, isDum){
+    const k = 0.18;
+    if (isDum) D.hard += (p - D.hard) * k; else D.light += (p - D.light) * k;
+    D.light = clamp(D.light, 1.2, 30); D.hard = clamp(D.hard, 2.2, 60);
+    if (D.hard / D.light < 1.8){ const m = Math.sqrt(D.hard * D.light); D.hard = m * 1.3416; D.light = m / 1.3416; }
+  }
+  // kalibrasyon: yerçekimi büyüklüğü ve bedenin sağ yönü (telefon belin arkasında, ekran dışa bakarken)
+  function setGravity(g){
+    D.G = Math.hypot(g[0], g[1], g[2]) || 9.81; D.gl0 = g.slice(); D.gl = g.slice();
+    const u = norm(g); let r = cross(u, [0, 0, 1]);
+    if (Math.hypot(r[0], r[1], r[2]) < 0.4){ const c = cross(u, [0, 1, 0]); r = [-c[0], -c[1], -c[2]]; }
+    D.right = norm(r);
+  }
+  const fire = (slot, v, info) => cb.fire && cb.fire(slot, v, info || {});
+
+  function sample(a, rot, t){
+    const dt = D.lastT ? clamp((t - D.lastT) / 1000, 0.004, 0.05) : 1 / 60; D.lastT = t;
+    const mag = Math.hypot(a[0], a[1], a[2]);
+
+    // 1) zıplama: serbest düşüş, ardından iniş
+    if (mag < 3.5){ if (!D.airStart) D.airStart = t; return; }
+    if (D.airStart){
+      const air = t - D.airStart; D.airStart = 0;
+      if (air > 100 && air < 900 && t - D.lastJump > 500){
+        D.lastJump = t; D.armDrop = 0; D.unloadStart = 0; D.rising = false; D.armed = false;
+        fire("zipla", clamp(0.75 + (air - 100) / 1200, 0.75, 1), { air }); return;
+      }
+    }
+
+    if (!D.gl) D.gl = a.slice();
+    for (let i = 0; i < 3; i++) D.gl[i] += (a[i] - D.gl[i]) * 0.15;
+    const u = norm(D.gl);
+    const vd = dot(a, u) - D.G;                                  // dikey dinamik ivme
+    const dyn = [a[0] - D.gl[0], a[1] - D.gl[1], a[2] - D.gl[2]];
+    const dv = dot(dyn, u), hor = [dyn[0] - dv * u[0], dyn[1] - dv * u[1], dyn[2] - dv * u[2]];
+    const hmag = Math.hypot(hor[0], hor[1], hor[2]);
+    const lat = dot(dyn, D.right) * D.flip;                       // + sağa, - sola
+
+    // 2) dönüş: dikey eksen etrafındaki açısal hızın birikimi (yarım turda bir)
+    if (rot && rot[0] !== null && rot[0] !== undefined){
+      const w = rot[0] * u[0] + rot[1] * u[1] + rot[2] * u[2];
+      if (Math.abs(w) > 40){ D.yaw += w * dt; D.yawQuiet = 0; }
+      else { D.yawQuiet += dt; if (D.yawQuiet > 0.35) D.yaw = 0; }
+      if (Math.abs(D.yaw) >= 150 && t - D.lastTurn > 250){ D.lastTurn = t; D.yaw = 0; fire("donus", clamp(0.6 + Math.abs(w) / 1200, 0.6, 1), { w }); }
+    }
+
+    // 3) çöküş: belirgin aşağı hızlanma, ardından sert frenleme
+    if (!D.unloadStart && vd < -1.0){ D.unloadStart = t; D.vel = 0; }
+    if (D.unloadStart){
+      D.vel += vd * dt;
+      if (vd > 0){
+        if (t - D.unloadStart > 140 && D.vel < -0.75){ D.armDrop = t; D.armVel = D.vel; }
+        D.unloadStart = 0; D.vel = 0;
+      } else if (t - D.unloadStart > 900){ D.unloadStart = 0; D.vel = 0; }
+    }
+    if (D.armDrop){
+      if (t - D.armDrop > 450) D.armDrop = 0;
+      else if (vd > 5 && t - D.lastDrop > 600){
+        D.lastDrop = t; D.armDrop = 0; D.rising = false; D.armed = false;
+        fire("cokus", clamp(0.5 + (-D.armVel - 0.75) * 0.5, 0.5, 1)); return;
+      }
+    }
+
+    // 4) titreme: 450 ms pencerede baskın eksendeki hızlı yön değişimleri; her dönüşte bir vuruş
+    D.buf.push([t, dyn[0], dyn[1], dyn[2]]);
+    while (D.buf.length && t - D.buf[0][0] > 450) D.buf.shift();
+    let best = -1, k = 0;
+    for (let ax = 0; ax < 3; ax++){ let s = 0; for (const r of D.buf) s += r[ax + 1] * r[ax + 1]; if (s > best){ best = s; k = ax; } }
+    const rms = Math.sqrt(best / D.buf.length);
+    let cross_ = 0, sg = 0;
+    for (const r of D.buf){ const v = r[k + 1], s = v > 0.5 ? 1 : v < -0.5 ? -1 : 0; if (s){ if (sg && s !== sg) cross_++; sg = s; } }
+    if (cross_ >= 5 && rms > 1.0) D.shimmyUntil = t + 160;
+    const shaking = t < D.shimmyUntil;
+    D.rms = rms;
+    D.intensity = shaking ? clamp((rms - 1.0) / 5, 0.05, 1) : D.intensity * 0.85;
+    for (let ax = 0; ax < 3; ax++){
+      const v = dyn[ax], s = v > 0.5 ? 1 : v < -0.5 ? -1 : 0;
+      if (!s) continue;
+      if (ax === k && shaking && D.lastSign[ax] && s !== D.lastSign[ax]) fire("titreme", clamp(0.3 + 0.7 * D.intensity, 0.3, 1));
+      D.lastSign[ax] = s;
+    }
+    cb.shimmy && cb.shimmy(D.intensity);
+
+    const quiet = D.armDrop || t - D.lastJump < 350 || t - D.lastDrop < 350;
+
+    // 5) kalça vuruşu: dikey bileşeni küçük, keskin yatay itiş
+    if (!shaking && !quiet && t - D.lastStep > 150){
+      const hthr = 5;
+      if (!D.hArmed){ if (hmag < hthr * 0.4) D.hArmed = true; }
+      else if (!D.hRising){ if (hmag > hthr && t - D.lastHip > 280){ D.hRising = true; D.hPeak = hmag; D.hRiseT = t; D.hVd = Math.abs(vd); } }
+      else if (hmag >= D.hPeak && t - D.hRiseT < 50){ D.hPeak = hmag; D.hVd = Math.max(D.hVd, Math.abs(vd)); }
+      else {
+        D.hRising = false; D.hArmed = false;
+        if (D.hVd < 0.5 * D.hPeak){ D.lastHip = t; fire("kalca", clamp(0.5 + (D.hPeak - hthr) / 10, 0.5, 1), { peak: D.hPeak }); }
+      }
+    } else D.hRising = false;
+
+    // 6) basış (sağ/sol × sert/hafif) ya da yaylanma: tepe noktası geçer geçmez tetiklenir
+    D.sm = D.sm * 0.4 + vd * 0.6;
+    if (quiet || t - D.lastHip < 200){ D.rising = false; return; }
+    const base = Math.max(1.4, D.light * 0.45);
+    const thr = shaking ? Math.max(base, rms * 2.2) : base;
+    if (D.sm < thr * 0.5) D.lowT = t;
+    if (!D.armed){ if (D.sm < thr * 0.4) D.armed = true; return; }
+    if (!D.rising){
+      if (D.sm > thr && t - D.lastStep > 190){ D.rising = true; D.peak = D.sm; D.peakT = t; D.riseT = t; D.latSum = lat; }
+      return;
+    }
+    D.latSum += lat;
+    if (D.sm >= D.peak && t - D.riseT < 150){ D.peak = D.sm; D.peakT = t; return; }
+    const p = Math.max(D.peak, D.sm), rise = Math.max(0, D.peakT - D.lowT - dt * 1000);
+    D.rising = false; D.armed = false; D.lastStep = t;
+    if (rise >= D.bounceMs){ fire("yaylanma", clamp(0.45 + 0.4 * p / threshold(), 0.45, 0.85), { peak: p, rise }); return; }
+    const T = threshold(), isDum = p >= T;
+    const v = isDum ? clamp(0.6 + 0.4 * (p - T) / Math.max(0.5, D.hard * 1.3 - T), 0.6, 1)
+                    : clamp(0.35 + 0.5 * p / T, 0.35, 0.85);
+    learn(p, isDum);
+    const side = D.latSum < 0 ? "sag" : "sol";   // sağ ayak basınca gövde sola doğru frenlenir
+    fire(side + (isDum ? "Sert" : "Hafif"), v, { peak: p, T, side, rise });
+  }
+  return { sample, setGravity, reset,
+    set bias(b){ D.bias = b; }, set bounceMs(x){ D.bounceMs = x; }, set flip(f){ D.flip = f; },
+    get state(){ return D; } };
+}
+</script>
+<script id="baget">
+function makeBagetDetector(cb){
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = v => { const m = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / m, v[1] / m, v[2] / m]; };
+  const DEG = Math.PI / 180;
+  const D = { ready: false, s: 1, G: 9.81, U0: [0, 0, 1], F: [0, 1, 0], R: [1, 0, 0], U: [0, 0, 1],
+              sens: 1, zoneDeg: 25, hand: 1, gf: 1, gfFixed: false, evNum: 0, evDen: 0 };
+  function reset(){
+    Object.assign(D, { v: [0, 0, 0], lastT: 0, braking: false, lastEvt: 0, lastStrike: 0, evts: [], shakeUntil: 0,
+      lastTwist: 0, twistArmed: true, Uq: null, pitch: 0, roll: 0, zone: "orta", kenar: false });
+    D.U = D.U0.slice();
+  }
+  reset();
+  // başlangıç duruşu: telefon kumanda gibi, ekran yukarı, üst kenarı ileri, kol öne uzanmış
+  function calibrate(mref){
+    D.G = Math.hypot(mref[0], mref[1], mref[2]) || 9.81;
+    D.s = mref[2] >= 0 ? 1 : -1;                         // platformun ivme işaret kuralını ekranın yukarı baktığı duruştan çıkar
+    D.U0 = norm(mref.map(x => x * D.s));
+    const yu = D.U0[1];
+    D.F = norm([-yu * D.U0[0], 1 - yu * D.U0[1], -yu * D.U0[2]]);   // telefonun üst kenarı: önkol yönü
+    D.R = norm(cross(D.F, D.U0));                                     // sağ
+    D.gf = 1; D.gfFixed = false; D.evNum = 0; D.evDen = 0;
+    reset(); D.ready = true;
+  }
+  const fire = (slot, v, info) => cb.fire && cb.fire(slot, v, info || {});
+
+  function event(dir, speed, t){
+    D.evts.push({ t, dir }); while (D.evts.length && t - D.evts[0].t > 380) D.evts.shift();
+    let alt = 0; for (let i = 1; i < D.evts.length; i++) if (dot(D.evts[i].dir, D.evts[i - 1].dir) < -0.3) alt++;
+    if (D.evts.length >= 3 && alt >= 2) D.shakeUntil = t + 220;
+    if (t < D.shakeUntil){ fire("sallama", clamp(0.35 + speed / 4, 0.35, 1)); return; }
+    if (t - D.lastStrike < 110) return;
+    const v = clamp(0.3 + (speed - 0.7 / D.sens) / 3, 0.3, 1);
+    // kenar: telefon yana dönükken dünyaya göre aşağı vuruş
+    if (D.kenar && -dot(dir, D.U) > 0.6){ D.lastStrike = t; fire("kenar", v, { speed, pitch: D.pitch, roll: D.roll }); return; }
+    // diğerleri telefonun kendi eksenlerine göre: kol hangi açıda olursa olsun aynı hareket aynı yöne düşer
+    const c = { asagi: -dot(dir, D.U0), yukari: dot(dir, D.U0), saga: dot(dir, D.R), sola: -dot(dir, D.R), one: dot(dir, D.F), geri: -dot(dir, D.F) };
+    let best = "asagi"; for (const k in c) if (c[k] > c[best]) best = k;
+    if (c[best] < 0.55 || best === "geri") return;
+    D.lastStrike = t;
+    let slot = best;
+    if (best === "asagi") slot = D.zone === "alcak" ? "asagiAlcak" : D.zone === "yuksek" ? "asagiYuksek" : "asagiOrta";
+    else if (best === "saga" || best === "sola") slot = (best === "saga") === (D.hand === 1) ? "saga" : "sola";
+    fire(slot, v, { speed, pitch: D.pitch, roll: D.roll });
+  }
+
+  function sample(mRaw, rot, t){
+    if (!D.ready) return;
+    const dt = D.lastT ? clamp((t - D.lastT) / 1000, 0.004, 0.05) : 1 / 60; D.lastT = t;
+    const m = [mRaw[0] * D.s, mRaw[1] * D.s, mRaw[2] * D.s];
+    const mag = Math.hypot(m[0], m[1], m[2]), mn = norm(m);
+    const quiet = Math.abs(mag - D.G) < 0.8;
+    const hasRot = rot && rot[0] !== null && rot[0] !== undefined;
+    let wr = [0, 0, 0];
+    if (hasRot){
+      // jiroskobun işaretini ivmeden görülen yavaş dönüşle karşılaştırarak doğrula (bazı cihazlar ters işaret verebilir)
+      if (!D.gfFixed){
+        const Ua = D.Ua ? norm(D.Ua.map((u, i) => u * 0.7 + mn[i] * 0.3)) : mn;
+        if (quiet && D.Ua && D.UaQuiet){
+          const pr = cross(D.Ua, rot.map(x => x * DEG * dt)), obs = [Ua[0] - D.Ua[0], Ua[1] - D.Ua[1], Ua[2] - D.Ua[2]];
+          D.evNum += dot(obs, pr); D.evDen += dot(pr, pr);
+          if (D.evDen > 0.004){ const k = D.evNum / D.evDen; if (Math.abs(k) > 0.2 || D.evDen > 0.04){ D.gf = k < 0 ? -1 : 1; D.gfFixed = true; } }
+        }
+        D.Ua = Ua; D.UaQuiet = quiet;
+      }
+      wr = rot.map(x => x * D.gf * DEG);
+      const dU = cross(D.U, wr);                          // dünyaya sabit vektör cihaz çerçevesinde ters döner
+      D.U = norm([D.U[0] + dU[0] * dt, D.U[1] + dU[1] * dt, D.U[2] + dU[2] * dt]);
+    }
+    if (quiet){ const k = hasRot ? 0.04 : 0.25; D.U = norm([D.U[0] * (1 - k) + mn[0] * k, D.U[1] * (1 - k) + mn[1] * k, D.U[2] * (1 - k) + mn[2] * k]); D.Uq = mn; }
+    else D.Uq = null;
+
+    // kol açısı (bölge) ve telefonun yana dönüklüğü (kenar)
+    D.pitch = Math.asin(clamp(dot(D.F, D.U), -1, 1)) / DEG;
+    D.roll = Math.atan2(dot(D.U, D.R), dot(D.U, D.U0)) / DEG;
+    D.zone = D.pitch < -D.zoneDeg ? "alcak" : D.pitch > D.zoneDeg ? "yuksek" : "orta";
+    D.kenar = Math.abs(D.roll) > 50 && Math.abs(D.pitch) < 60;
+
+    // bilek çevirme: önkol ekseni etrafında hızlı dönüş
+    if (hasRot){
+      const wf = Math.abs(dot(wr, D.F)) / DEG;
+      if (D.twistArmed && wf > 450 && t - D.lastTwist > 250){ D.twistArmed = false; D.lastTwist = t; fire("bilek", clamp(0.5 + (wf - 450) / 1000, 0.5, 1)); }
+      else if (!D.twistArmed && wf < 150) D.twistArmed = true;
+    }
+
+    // hız: dönen cihaz çerçevesinde doğru taşınarak ve hafif sızdırılarak entegre edilir
+    const ak = [m[0] - D.G * D.U[0], m[1] - D.G * D.U[1], m[2] - D.G * D.U[2]];
+    const vPrev = D.v, speed = Math.hypot(vPrev[0], vPrev[1], vPrev[2]);
+    const wv = cross(wr, vPrev), lam = Math.exp(-dt / 0.25);
+    D.v = [0, 1, 2].map(i => (vPrev[i] - wv[i] * dt) * lam + ak[i] * dt);
+    // vuruş: yüksek hızdayken sert frenlemenin BAŞLADIĞI an (derideki temas anının karşılığı)
+    const brake = speed > 0.05 ? -dot(ak, vPrev) / speed : 0;
+    const bThr = 14 / D.sens, vMin = 0.7 / D.sens;
+    if (!D.braking && brake > bThr && speed > vMin && t - D.lastEvt > 45){
+      D.braking = true; D.lastEvt = t;
+      event(vPrev.map(x => x / speed), speed, t);
+    } else if (D.braking && brake < bThr * 0.35) D.braking = false;
+  }
+  return { sample, calibrate, reset,
+    set sens(x){ D.sens = x; }, set zoneDeg(x){ D.zoneDeg = x; }, set hand(h){ D.hand = h; },
+    get state(){ return D; } };
+}
+</script>
+
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const rnd = (a, b) => a + Math.random() * (b - a);
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const fmt = x => x.toFixed(1).replace(".", ",");
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/* ---------- ses motoru ---------- */
+let ctx, master, rev, recDest, recorder = null, recChunks = [], noiseBuf;
+function initAudio(){
+  if (ctx) return;
+  try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch(e){}
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -12; comp.ratio.value = 4; comp.attack.value = 0.002; comp.release.value = 0.15;
+  master = ctx.createGain(); master.gain.value = 0.9;
+  master.connect(comp); comp.connect(ctx.destination);
+  const conv = ctx.createConvolver(), len = Math.floor(ctx.sampleRate * 1.3), ir = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++){ const ch = ir.getChannelData(c); for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3); }
+  conv.buffer = ir; rev = ctx.createGain(); rev.gain.value = 0.16; rev.connect(conv); conv.connect(master);
+  noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+  const nd = noiseBuf.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  try { recDest = ctx.createMediaStreamDestination(); comp.connect(recDest); } catch(e){ recDest = null; }
+}
+function noise(){ const s = ctx.createBufferSource(); s.buffer = noiseBuf; return s; }
+function env(g, t, a, peak, dec){ g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec); }
+function tone(t, type, f0, f1, glide, peak, dec){
+  const o = ctx.createOscillator(), g = ctx.createGain(); o.type = type;
+  o.frequency.setValueAtTime(f0, t); if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + glide);
+  env(g, t, 0.002, peak, dec); o.connect(g); g.connect(master); o.start(t); o.stop(t + dec + 0.05); return g;
+}
+function burst(t, type, freq, q, peak, dec, sendRev){
+  const n = noise(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  f.type = type; f.frequency.value = freq; f.Q.value = q; env(g, t, 0.001, peak, dec);
+  n.connect(f); f.connect(g); g.connect(master); if (sendRev) g.connect(rev);
+  n.start(t, Math.random() * 0.5); n.stop(t + dec + 0.05);
+}
+// darbuka
+function dum(t, v){
+  const f = 86 * rnd(0.98, 1.02);
+  tone(t, "sine", f * 1.9, f, 0.045, 0.95 * v, rnd(0.42, 0.55)).connect(rev);
+  tone(t, "sine", f * 1.52, f * 1.5, 0.03, 0.22 * v, 0.14);
+  burst(t, "lowpass", 700, 0.7, 0.35 * v, 0.03);
+}
+function tek(t, v){
+  const f = 690 * rnd(0.985, 1.015), br = 0.5 + 0.5 * v;
+  [[1, 0.34, 0.16], [1.59, 0.22 * br, 0.11], [2.14, 0.16 * br, 0.08], [2.65, 0.1 * br, 0.06]]
+    .forEach(([r, a, d]) => tone(t, "sine", f * r, f * r, 0, a * v, d * rnd(0.9, 1.1)));
+  burst(t, "highpass", 3200, 0.7, 0.5 * v, 0.012);
+}
+function slap(t, v){
+  burst(t, "bandpass", 1500 * rnd(0.95, 1.05), 1.4, 2.4 * v, 0.07, true);
+  burst(t, "highpass", 4000, 0.7, 0.6 * v, 0.015);
+  tone(t, "triangle", 360 * rnd(0.98, 1.02), 320, 0.02, 0.3 * v, 0.08);
+}
+// def
+function jingle(t, v){
+  for (let k = 0; k < 2; k++){
+    const tt = t + (k ? rnd(0.006, 0.018) : 0), n = noise(), g = ctx.createGain();
+    env(g, tt, 0.001, 1.3 * v * (k ? 0.55 : 1), rnd(0.06, 0.12));
+    [rnd(3900, 4500), rnd(5800, 6500), rnd(7800, 8800)].forEach(fr => { const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = fr; bp.Q.value = 10; n.connect(bp); bp.connect(g); });
+    g.connect(master); g.connect(rev); n.start(tt, Math.random() * 0.5); n.stop(tt + 0.17);
+  }
+}
+function defVurus(t, v){
+  const f = 135 * rnd(0.98, 1.02);
+  tone(t, "sine", f * 1.5, f, 0.03, 0.85 * v, 0.28).connect(rev);
+  tone(t, "sine", f * 2.3, f * 2.25, 0.02, 0.18 * v, 0.1);
+  burst(t, "lowpass", 900, 0.7, 0.3 * v, 0.025);
+  jingle(t + 0.004, 0.45 * v);
+}
+// bendir
+function bendir(t, v){
+  const f = 58 * rnd(0.98, 1.02);
+  tone(t, "sine", f * 1.8, f, 0.08, 1.0 * v, rnd(0.9, 1.1)).connect(rev);
+  tone(t, "triangle", f * 2.3, f * 2.2, 0.05, 0.2 * v, 0.25);
+  burst(t, "bandpass", 1200, 0.7, 0.2 * v, 0.5, true);
+  burst(t, "lowpass", 400, 0.7, 0.4 * v, 0.04);
+}
+// davul
+function tokmak(t, v){
+  const f = 52 * rnd(0.98, 1.02);
+  tone(t, "sine", f * 2.2, f, 0.06, 1.1 * v, rnd(0.65, 0.8)).connect(rev);
+  tone(t, "sine", f * 1.5, f * 1.45, 0.05, 0.3 * v, 0.3);
+  burst(t, "bandpass", 420, 1.0, 0.8 * v, 0.05);
+  burst(t, "lowpass", 220, 0.7, 0.6 * v, 0.06);
+}
+function cubuk(t, v){
+  burst(t, "highpass", 2200, 0.7, 0.6 * v, 0.03, true);
+  tone(t, "square", 880 * rnd(0.97, 1.03), 860, 0.01, 0.1 * v, 0.04);
+  tone(t, "sine", 1760 * rnd(0.97, 1.03), 1760, 0, 0.1 * v, 0.05);
+}
+// kaşık: iki tahta çarpışması
+function kasik(t, v){
+  for (let k = 0; k < 2; k++){
+    const tt = t + (k ? rnd(0.012, 0.02) : 0), a = k ? 0.6 : 1;
+    burst(tt, "bandpass", rnd(2000, 2500), 4, 3.2 * v * a, 0.022);
+    tone(tt, "sine", rnd(1750, 1950), 1700, 0.01, 0.2 * v * a, 0.025);
+  }
+}
+// parmak zili: iki zilin hafif akortsuz çınlaması
+function parmakZili(t, v){
+  const f = 2640 * rnd(0.99, 1.01);
+  [[1, 0.16, 1.4], [1.51, 0.08, 0.9], [2.39, 0.05, 0.6], [3.1, 0.03, 0.4]].forEach(([r, a, d]) => {
+    tone(t, "sine", f * r, f * r, 0, a * v, d).connect(rev);
+    tone(t + 0.003, "sine", f * r + 7, f * r + 7, 0, a * v * 0.8, d * 0.9);
+  });
+}
+
+/* ---------- katalog: enstrümanlar ve sesler ---------- */
+const css = getComputedStyle(document.documentElement);
+const INSTS = [
+  { name: "Darbuka", v: "--darbuka", ink: "#A8352A" }, { name: "Def", v: "--def", ink: "#1E7C74" },
+  { name: "Bendir", v: "--bendir", ink: "#7A5230" }, { name: "Davul", v: "--davul", ink: "#3D55A8" },
+  { name: "Kaşık", v: "--kasik", ink: "#A87812" }, { name: "Parmak zili", v: "--zil", ink: "#B0395F" }
+];
+INSTS.forEach(i => { i.col = css.getPropertyValue(i.v).trim(); });
+const SOUNDS = [
+  { id: "darbuka-dum",  inst: 0, full: "Darbuka düm",  motif: "baklava",  play: dum },
+  { id: "darbuka-tek",  inst: 0, full: "Darbuka tek",  motif: "ucgen",    play: tek },
+  { id: "darbuka-slap", inst: 0, full: "Darbuka slap", motif: "kumsaati", play: slap },
+  { id: "def-vurus",    inst: 1, full: "Def vuruş",    motif: "daire",    play: defVurus },
+  { id: "def-zil",      inst: 1, full: "Def zili",     motif: "arti",     play: jingle },
+  { id: "bendir",       inst: 2, full: "Bendir",       motif: "goz",      play: bendir },
+  { id: "davul-tokmak", inst: 3, full: "Davul tokmak", motif: "kare",     play: tokmak },
+  { id: "davul-cubuk",  inst: 3, full: "Davul çubuk",  motif: "cubuk",    play: cubuk },
+  { id: "kasik",        inst: 4, full: "Kaşık",        motif: "cift",     play: kasik },
+  { id: "parmak-zili",  inst: 5, full: "Parmak zili",  motif: "yildiz",   play: parmakZili }
+];
+const SND = Object.fromEntries(SOUNDS.map(s => [s.id, s]));
+
+/* ---------- iki mod: slotlar ve hazır düzenler ---------- */
+const SLOTSETS = {
+  bel: [
+    { id: "sagSert",  name: "Sağ sert basış",  short: "Sağ sert",  step: true, sub: "Güvenilirlik orta" },
+    { id: "sagHafif", name: "Sağ hafif basış", short: "Sağ hafif", step: true, sub: "Güvenilirlik orta" },
+    { id: "solSert",  name: "Sol sert basış",  short: "Sol sert",  step: true, sub: "Güvenilirlik orta" },
+    { id: "solHafif", name: "Sol hafif basış", short: "Sol hafif", step: true, sub: "Güvenilirlik orta" },
+    { id: "zipla",    name: "Zıplama",         short: "Zıpla",     sub: "İnişte çalar" },
+    { id: "donus",    name: "Dönüş",           short: "Dön",       sub: "Her yarım turda bir" },
+    { id: "cokus",    name: "Ani çöküş",       short: "Çök",       sub: "Güvenilirlik orta-yüksek" },
+    { id: "kalca",    name: "Kalça vuruşu",    short: "Kalça",     sub: "Yana ani itiş; güvenilirlik orta" },
+    { id: "titreme",  name: "Titreme",         short: "Titret",    cont: true, sub: "Sürekli: rulo çalar" },
+    { id: "yaylanma", name: "Yaylanma",        short: "Yaylan",    sub: "Sürekli: her inişte bir vuruş" }
+  ],
+  baget: [
+    { id: "asagiAlcak",  name: "Aşağı vuruş, alçak",  short: "Alçak",  step: true, sub: "Bel hizası, telefon aşağı eğik" },
+    { id: "asagiOrta",   name: "Aşağı vuruş, orta",   short: "Orta",   step: true, sub: "Göğüs hizası, telefon yatay" },
+    { id: "asagiYuksek", name: "Aşağı vuruş, yüksek", short: "Yüksek", step: true, sub: "Baş hizası, telefon yukarı eğik" },
+    { id: "kenar",       name: "Kenar vuruşu",        short: "Kenar",  step: true, sub: "Telefon yana dönükken aşağı vuruş" },
+    { id: "saga",        name: "Sağa vuruş",          short: "Sağa",   step: true, sub: "Yana savurup durdur" },
+    { id: "sola",        name: "Sola vuruş",          short: "Sola",   step: true, sub: "Yana savurup durdur" },
+    { id: "one",         name: "Öne itme",            short: "Öne",    step: true, sub: "Yumruk gibi ileri; güvenilirlik orta" },
+    { id: "yukari",      name: "Yukarı vuruş",        short: "Yukarı", step: true, sub: "Deneysel: hazırlık hareketini de sayabilir" },
+    { id: "bilek",       name: "Bilek çevirme",       short: "Bilek",  sub: "Hızlı bilek dönüşü" },
+    { id: "sallama",     name: "Sallama",             short: "Salla",  cont: true, sub: "Sürekli: rulo çalar" }
+  ]
+};
+const SLOT_ALL = Object.fromEntries([...SLOTSETS.bel, ...SLOTSETS.baget].map(s => [s.id, s]));
+const PRESETSETS = {
+  bel: { list: [["roman", "Roman düzeni"], ["zeybek", "Zeybek düzeni"], ["bos", "Hepsini boşalt"]], def: "roman",
+    roman:  { sagSert: "darbuka-dum", solSert: "darbuka-dum", sagHafif: "darbuka-tek", solHafif: "darbuka-tek", zipla: "darbuka-slap", donus: "parmak-zili", cokus: "bendir", kalca: "def-vurus", titreme: "def-zil", yaylanma: "kasik" },
+    zeybek: { sagSert: "davul-tokmak", solSert: "davul-tokmak", sagHafif: "davul-cubuk", solHafif: "davul-cubuk", zipla: "darbuka-slap", donus: "parmak-zili", cokus: "bendir", kalca: "kasik", titreme: "def-zil", yaylanma: "" } },
+  baget: { list: [["darbuka", "Darbuka seti"], ["davul", "Davul seti"], ["bos", "Hepsini boşalt"]], def: "darbuka",
+    darbuka: { asagiAlcak: "davul-tokmak", asagiOrta: "darbuka-dum", asagiYuksek: "parmak-zili", kenar: "darbuka-tek", saga: "def-vurus", sola: "darbuka-slap", one: "bendir", yukari: "", bilek: "kasik", sallama: "def-zil" },
+    davul:   { asagiAlcak: "bendir", asagiOrta: "davul-tokmak", asagiYuksek: "parmak-zili", kenar: "davul-cubuk", saga: "def-vurus", sola: "kasik", one: "darbuka-slap", yukari: "", bilek: "def-zil", sallama: "def-zil" } }
+};
+["bel", "baget"].forEach(m => { PRESETSETS[m].bos = Object.fromEntries(SLOTSETS[m].map(s => [s.id, ""])); });
+const TEXT = {
+  bel: {
+    intro: "Telefonu <strong>belinin arkasına</strong>, ekranı dışa bakacak şekilde yerleştir: bel çantasına koy ya da sıkı bir bel lastiğinin içine sıkıştır. Sesi hoparlörden ya da kablolu kulaklıktan ver; Bluetooth kulaklık vuruşları geciktirir.",
+    start: "Dansa başla", note: "5 saniye sayar. Bu sürede telefonu yerleştir, sonra dik ve hareketsiz dur.",
+    test: "Telefonu dans ederken olacağı yere, belinin arkasına yerleştir. Bir hareketi birkaç kez yap: her algılama atadığın sesi çalar ve o slotun sayacını artırır. Sonra telefona bakıp hangi sayacın arttığını gör.",
+    sim: "Titret'i basılı tut. Klavyede 1'den 0'a kadar tuşlar slotları çalar; titreme için 9'u basılı tut.",
+    tempo: "basış/dk", status: "Belde: <b>çalıyor</b>"
+  },
+  baget: {
+    intro: "Telefonu <strong>kumanda gibi tut</strong>: ekran yukarı, üst kenarı ileri baksın. Bileğine askı tak; sert vuruşlarda telefon elinden kayabilir. Sesi hoparlörden ya da kablolu kulaklıktan ver.",
+    start: "Çalmaya başla", note: "3 saniye sayar. Sonra kolunu öne uzat ve 1,5 saniye kıpırdamadan tut; bu duruş orta bölge olur.",
+    test: "Telefon elindeyken ekranı görebilirsin: her vuruş sesini çalar, slotunu yakar ve sayacını artırır. Bölge satırı kolunun o anki açısını gösterir.",
+    sim: "Salla'yı basılı tut. Klavyede 1'den 0'a kadar tuşlar slotları çalar; sallama için 0'ı basılı tut.",
+    tempo: "vuruş/dk", status: "Elde: <b>çalıyor</b>"
+  }
+};
+
+/* ---------- kayıtlı düzen ---------- */
+const KEY2 = "yuruyen-orkestra-anadolu-kit-v2", KEY1 = "yuruyen-orkestra-anadolu-kit-v1";
+function cleanMap(mode, m){
+  const d = PRESETSETS[mode][PRESETSETS[mode].def], out = {};
+  SLOTSETS[mode].forEach(s => { const v = m ? m[s.id] : undefined; out[s.id] = v === "" ? "" : SND[v] ? v : d[s.id]; });
+  return out;
+}
+function loadKit(){
+  try {
+    const o = JSON.parse(localStorage.getItem(KEY2) || "null");
+    if (o && o.maps) return {
+      mode: o.mode === "baget" ? "baget" : "bel",
+      maps: { bel: cleanMap("bel", o.maps.bel), baget: cleanMap("baget", o.maps.baget) },
+      flip: o.flip === -1 ? -1 : 1, bias: clamp(+o.bias || 1, 0.7, 1.4), bounce: clamp(+o.bounce || 65, 40, 120),
+      hand: o.hand === -1 ? -1 : 1, sens: clamp(+o.sens || 1, 0.6, 1.6), zone: clamp(+o.zone || 25, 12, 45) };
+    const v1 = JSON.parse(localStorage.getItem(KEY1) || "null");
+    if (v1 && v1.map) return { mode: "bel", maps: { bel: cleanMap("bel", v1.map), baget: cleanMap("baget", null) },
+      flip: v1.flip === -1 ? -1 : 1, bias: clamp(+v1.bias || 1, 0.7, 1.4), bounce: clamp(+v1.bounce || 65, 40, 120), hand: 1, sens: 1, zone: 25 };
+  } catch(e){}
+  return null;
+}
+const kit = loadKit() || { mode: "bel", maps: { bel: cleanMap("bel", null), baget: cleanMap("baget", null) }, flip: 1, bias: 1, bounce: 65, hand: 1, sens: 1, zone: 25 };
+function saveKit(){ try { localStorage.setItem(KEY2, JSON.stringify(kit)); } catch(e){} }
+const slots = () => SLOTSETS[kit.mode];
+const map = () => kit.maps[kit.mode];
+const rollSlot = () => kit.mode === "bel" ? "titreme" : "sallama";
+
+/* ---------- oturum ---------- */
+const S = { mode: "idle", live: false, started: 0, hits: 0, steps: 0, lastStep: 0, intervals: [], events: [], all: [], shimmy: 0, lastLane: [0, 0, 0, 0, 0, 0], usul: null };
+const recording = () => S.mode === "dance" || S.mode === "sim";
+function mark(snd, v){
+  const e = { inst: snd.inst, motif: snd.motif, t: performance.now(), v };
+  S.events.push(e); S.lastLane[snd.inst] = e.t;
+  if (S.events.length > 3000) S.events.splice(0, 1000);
+  if (recording() && S.all.length < 30000) S.all.push(e);
+}
+let flashT = null;
+function flash(inst){
+  if (S.mode !== "dance" || reduceMotion) return;
+  const f = $(kit.mode === "bel" ? "flash" : "stFlash"); f.style.setProperty("--c", INSTS[inst].col); f.classList.add("hit");
+  clearTimeout(flashT); flashT = setTimeout(() => f.classList.remove("hit"), 60);
+}
+let lastRollMark = 0;
+function fire(slotId, v, info){
+  const slot = SLOT_ALL[slotId]; if (!slot) return;
+  const now = performance.now();
+  if (slot.step){
+    if (S.lastStep){ const iv = now - S.lastStep; if (iv < 1500){ S.intervals.push(iv); if (S.intervals.length > 16) S.intervals.shift(); } else S.intervals.length = 0; }
+    S.lastStep = now; S.steps++;
+  }
+  if (info && info.peak !== undefined && (slot.step || slotId === "yaylanma")){
+    $("meter").textContent = slotId === "yaylanma"
+      ? `Son dikey hareket: yaylanma, yükselme ${Math.round(info.rise)} ms.`
+      : `Son basış: ${info.side === "sag" ? "sağ" : "sol"}, güç ${fmt(info.peak)} (sert sınırı ${fmt(info.T)}), yükselme ${Math.round(info.rise)} ms.`;
+  } else if (info && info.speed !== undefined){
+    $("meter").textContent = `Son vuruş: ${slot.name.toLocaleLowerCase("tr")}, hız ${fmt(info.speed)} m/sn, kol açısı ${Math.round(info.pitch)}°, yana dönüklük ${Math.round(Math.abs(info.roll))}°.`;
+  }
+  if (slotId === "sallama") S.shimmy = Math.max(S.shimmy, v);
+  testLight(slotId);
+  const snd = SND[map()[slotId]];
+  if (snd && ctx){
+    snd.play(ctx.currentTime + 0.003, v);
+    if (!slot.cont || now - lastRollMark > 40){ mark(snd, v); if (slot.cont) lastRollMark = now; }
+    flash(snd.inst); S.hits++;
+    if (S.mode === "dance" && kit.mode === "baget" && !slot.cont){ const h = $("stHit"); h.textContent = snd.full; h.style.setProperty("--c", INSTS[snd.inst].col); }
+  }
+  if (!slot.cont) updateStats();
+}
+
+/* ---------- usul tanıma: vuruş aralıklarından aksak kalıp ---------- */
+function median(a){ if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; }
+function detectUsul(iv){
+  if (iv.length < 4) return null;
+  const last = iv.slice(-12), sorted = [...last].sort((a, b) => a - b);
+  const unit = sorted[Math.floor(sorted.length * 0.25)];
+  const cls = last.map(x => { const r = x / unit; return Math.abs(r - 1) < 0.2 ? "S" : Math.abs(r - 1.5) < 0.22 ? "L" : "?"; });
+  if (cls.includes("?")) return null;
+  if (!cls.includes("L")) return { sig: "Düz", sub: "eşit aralıklar" };
+  for (const p of [2, 3, 4]){
+    if (cls.length < 2 * p) continue;
+    const tail = cls.slice(-2 * p); let ok = true;
+    for (let i = p; i < tail.length; i++) if (tail[i] !== tail[i - p]){ ok = false; break; }
+    if (ok && tail.slice(0, p).filter(c => c === "L").length === 1)
+      return p === 2 ? { sig: "5/8", sub: "2+3" } : p === 3 ? { sig: "7/8", sub: "2+2+3" } : { sig: "9/8", sub: "2+2+2+3" };
+  }
+  return null;
+}
+function updateStats(){
+  $("sHits").textContent = S.hits;
+  $("sTempo").textContent = S.intervals.length > 2 ? Math.round(60000 / median(S.intervals)) : "–";
+  const u = detectUsul(S.intervals); if (u) S.usul = u;
+  $("sUsul").textContent = u ? u.sig : "–"; $("sUsulSub").innerHTML = u ? u.sub : "&nbsp;";
+}
+
+/* ---------- algılayıcılar ---------- */
+const det = makeDetector({ fire: (s, v, info) => fire(s, v, info), shimmy: x => { S.shimmy = x; } });
+det.bias = kit.bias; det.bounceMs = kit.bounce; det.flip = kit.flip;
+const bdet = makeBagetDetector({ fire: (s, v, info) => fire(s, v, info) });
+bdet.sens = kit.sens; bdet.zoneDeg = kit.zone; bdet.hand = kit.hand;
+const activeDet = () => kit.mode === "bel" ? det : bdet;
+
+/* ---------- kit arayüzü ---------- */
+function soundOptions(){
+  let h = `<option value="">Boş</option>`;
+  INSTS.forEach((ins, i) => {
+    const list = SOUNDS.filter(s => s.inst === i);
+    h += list.length > 1 ? `<optgroup label="${ins.name}">${list.map(s => `<option value="${s.id}">${s.full}</option>`).join("")}</optgroup>`
+                         : `<option value="${list[0].id}">${list[0].full}</option>`;
+  });
+  return h;
+}
+function paintSlot(li){ const snd = SND[map()[li.dataset.slot]]; li.style.setProperty("--c", snd ? INSTS[snd.inst].col : "var(--line)"); li.classList.toggle("empty", !snd); }
+function preview(id){ initAudio(); ctx.resume(); const snd = SND[map()[id]]; if (snd){ snd.play(ctx.currentTime + 0.01, 0.85); mark(snd, 0.85); } }
+function renderKit(){
+  const opts = soundOptions();
+  $("presets").innerHTML = PRESETSETS[kit.mode].list.map(([k, label]) => `<button type="button" data-preset="${k}">${label}</button>`).join("");
+  $("presets").querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    kit.maps[kit.mode] = { ...PRESETSETS[kit.mode][b.dataset.preset] }; saveKit(); renderKit(); refreshLabels();
+  }));
+  $("slotList").innerHTML = slots().map((s, i) => `<li class="slot" data-slot="${s.id}">
+    <span class="key" aria-hidden="true">${(i + 1) % 10}</span>
+    <div><div class="slot-name">${s.name}</div><div class="slot-sub">${s.sub}</div></div>
+    <div class="slot-pick"><select aria-label="${s.name} için ses">${opts}</select><button class="play" type="button" aria-label="${s.name} sesini dinle">▶</button></div></li>`).join("");
+  $("slotList").querySelectorAll(".slot").forEach(li => {
+    const id = li.dataset.slot, sel = li.querySelector("select");
+    sel.value = map()[id]; paintSlot(li);
+    sel.addEventListener("change", () => { map()[id] = sel.value; saveKit(); paintSlot(li); refreshLabels(); preview(id); });
+    li.querySelector(".play").addEventListener("click", () => preview(id));
+  });
+}
+function refreshLabels(){
+  document.querySelectorAll("#pads [data-slot], #testGrid [data-slot]").forEach(el => {
+    const snd = SND[map()[el.dataset.slot]];
+    el.style.setProperty("--c", snd ? INSTS[snd.inst].col : "var(--line)");
+    const lab = el.querySelector("small, .c-snd"); if (lab) lab.textContent = snd ? snd.full : "Boş";
+  });
+}
+$("lanes").innerHTML = INSTS.map(i => `<span style="--c:${i.col}"><i></i>${i.name}</span>`).join("");
+
+/* ---------- mod değiştirme ---------- */
+function applyMode(){
+  const T = TEXT[kit.mode];
+  document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === kit.mode)));
+  $("introText").innerHTML = T.intro; $("btnStart").textContent = T.start; $("startNote").textContent = T.note;
+  $("testNote").textContent = T.test; $("simNote").textContent = T.sim; $("tempoUnit").textContent = T.tempo; $("shakeLabel").textContent = kit.mode === "bel" ? "Titreme" : "Sallama";
+  $("setBel").hidden = kit.mode !== "bel"; $("setBaget").hidden = kit.mode !== "baget";
+  $("btnFlip").hidden = kit.mode !== "bel"; $("testZone").hidden = kit.mode !== "baget";
+  $("meter").textContent = "Son vuruş: –"; $("sensorWarn").hidden = true; $("testWarn").hidden = true;
+  renderKit(); renderPads(); renderGrid(); refreshLabels();
+  S.intervals = []; updateStats();
+}
+document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => {
+  if (b.dataset.mode === kit.mode) return;
+  stopTest(); stopSim(); kit.mode = b.dataset.mode; saveKit(); applyMode(); $("status").textContent = "Hazır";
+}));
+
+/* ---------- kayıt ---------- */
+function startRecording(){
+  recChunks = [];
+  if (!recDest || typeof MediaRecorder === "undefined"){ recorder = null; return; }
+  try { recorder = new MediaRecorder(recDest.stream); recorder.ondataavailable = e => e.data.size && recChunks.push(e.data); recorder.start(500); } catch(e){ recorder = null; }
+}
+function discardRecording(){ if (recorder && recorder.state !== "inactive"){ recorder.onstop = null; try { recorder.stop(); } catch(e){} } recorder = null; recChunks = []; }
+function stamp(){ const d = new Date(), p = n => String(n).padStart(2, "0"); return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${String(d.getFullYear()).slice(2)}-${p(d.getHours())}-${p(d.getMinutes())}`; }
+
+function resetSession(){
+  Object.assign(S, { started: performance.now(), hits: 0, steps: 0, lastStep: 0, intervals: [], all: [], shimmy: 0, usul: null });
+  activeDet().reset(); updateStats();
+}
+function beginSim(){
+  initAudio(); ctx.resume();
+  if (S.mode !== "idle") return;          // test ya da çalma sürüyorsa sadece ses çıkar
+  S.mode = "sim"; resetSession(); startRecording(); $("status").innerHTML = "Deneme: <b>çalıyor</b>";
+}
+
+/* ---------- sensör ---------- */
+let wakeLock = null, gotMotion = false, hasGyro = false, listening = false, calib = null;
+async function requestWake(){ try { wakeLock = await navigator.wakeLock.request("screen"); } catch(e){} }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && S.live) requestWake(); });
+function onMotion(e){
+  const a = e.accelerationIncludingGravity; if (!a || a.x === null || a.x === undefined) return;
+  gotMotion = true;
+  const arr = [a.x, a.y, a.z];
+  if (calib){ calib.push(arr); return; }
+  if (!S.live) return;
+  const r = e.rotationRate, ok = r && r.alpha !== null && r.alpha !== undefined;
+  if (ok) hasGyro = true;
+  activeDet().sample(arr, ok ? [r.beta, r.gamma, r.alpha] : null, performance.now());
+}
+const hasTouch = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
+const inApp = /Instagram|FBAN|FBAV|WhatsApp|Line\/|Twitter|TikTok/i.test(navigator.userAgent);
+function fail(el, msg){ el.innerHTML = msg; el.hidden = false; return false; }
+// iPhone izin penceresini yalnızca dokunuşun hemen içinde, araya "await" girmeden çağrılırsa gösterir.
+// Bu yüzden bu fonksiyon tıklama işleyicisinin ilk satırında çağrılır ve izni ilk iş olarak ister.
+async function ensureSensor(warnEl){
+  warnEl.hidden = true;
+  if (!hasTouch) return fail(warnEl, "Bu cihazda hareket sensörü yok. Telefondan aç; bilgisayarda <strong>Sensörsüz dene</strong> bölümünü kullanabilirsin.");
+  let permP = null;
+  if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function"){
+    try { permP = DeviceMotionEvent.requestPermission(); } catch(e){ permP = Promise.resolve("error"); }
+  }
+  initAudio(); const resumeP = ctx.resume();
+  if (permP){
+    let r = "error"; try { r = await permP; } catch(e){}
+    if (r !== "granted") return fail(warnEl, inApp
+      ? "Sensör izni alınamadı: sayfa bir uygulamanın (Instagram, WhatsApp vb.) içindeki tarayıcıda açık. Menüden <strong>Safari'de aç</strong>'ı seçip tekrar dene."
+      : "Sensör izni verilmedi. iPhone reddedilen izni hatırlar: Safari'yi uygulama değiştiriciden yukarı kaydırarak <strong>tamamen kapat</strong>, yeniden aç ve tekrar dene. Çıkan pencerede <strong>İzin Ver</strong>'e dokun.");
+  }
+  try { await resumeP; } catch(e){}
+  if (!listening){ window.addEventListener("devicemotion", onMotion); listening = true; }
+  if (!gotMotion) await wait(1000);
+  if (!gotMotion) return fail(warnEl, inApp
+    ? "Sensörden veri gelmiyor: sayfa bir uygulamanın içindeki tarayıcıda açık. Linki <strong>Safari veya Chrome</strong>'da aç."
+    : "Sensörden veri gelmiyor. Sayfayı yenileyip tekrar dene; olmazsa <strong>Sensörsüz dene</strong> bölümünü kullan.");
+  return true;
+}
+async function calibrate(ms){
+  calib = []; await wait(ms); const c = calib; calib = null;
+  return c.length ? [0, 1, 2].map(k => c.reduce((s, v) => s + v[k], 0) / c.length) : null;
+}
+function stopSim(){ autoOff(); rollStop(); if (S.mode === "sim"){ discardRecording(); S.mode = "idle"; } }
+
+/* ---------- çalma: bel ve baget ---------- */
+$("btnStart").addEventListener("click", async () => {
+  const ok = await ensureSensor($("sensorWarn")); if (!ok) return;
+  stopTest(); stopSim();
+  S.mode = "dance"; S.live = false; requestWake();
+  if (kit.mode === "bel") runBel(); else runBaget();
+});
+async function runBel(){
+  $("pocket").hidden = false; $("pMsg").textContent = "Telefonu yerleştir. Sonra dik ve hareketsiz dur.";
+  for (let i = 5; i > 0; i--){ $("pBig").textContent = i; tek(ctx.currentTime + 0.01, 0.35); await wait(1000); if (S.mode !== "dance") return; }
+  $("pBig").textContent = "…"; $("pMsg").textContent = "Hareketsiz dur, ölçüyorum.";
+  const g = await calibrate(1800); if (S.mode !== "dance") return;
+  if (g) det.setGravity(g);
+  dum(ctx.currentTime + 0.01, 0.9);
+  resetSession(); startRecording(); S.live = true;
+  $("pBig").textContent = "Dans et"; $("pMsg").textContent = "Ekrana bakmana gerek yok.";
+  $("status").innerHTML = TEXT.bel.status;
+}
+async function runBaget(){
+  $("stage").hidden = false; $("stHit").innerHTML = "&nbsp;"; $("stPose").innerHTML = "&nbsp;"; setZones(null);
+  for (let i = 3; i > 0; i--){ $("stMsg").textContent = `Telefonu kumanda gibi tut, ekran yukarı. ${i}`; tek(ctx.currentTime + 0.01, 0.3); await wait(1000); if (S.mode !== "dance") return; }
+  $("stMsg").textContent = "Kolunu öne uzat ve kıpırdama.";
+  const g = await calibrate(1500); if (S.mode !== "dance") return;
+  if (g) bdet.calibrate(g);
+  dum(ctx.currentTime + 0.01, 0.9);
+  resetSession(); hasGyro = false; startRecording(); S.live = true;
+  $("stMsg").textContent = "Çal";
+  $("status").innerHTML = TEXT.baget.status;
+  await wait(1500);
+  if (S.mode === "dance" && S.live && !hasGyro) $("stMsg").textContent = "Bu telefon dönüş hızını vermiyor; bölgeler ve bilek çevirme az güvenilir olur.";
+}
+function setZones(z){ $("zones").querySelectorAll("span").forEach(el => el.classList.toggle("on", el.dataset.z === z)); }
+
+// bel: tek parmakla 2 sn basılı tut
+let holdT = null, holdStart = 0;
+function holdTick(){ const p = (performance.now() - holdStart) / 2000; $("holdBar").style.transform = `scaleX(${Math.min(1, p)})`; if (p >= 1){ holdT = null; endSession(); } else holdT = requestAnimationFrame(holdTick); }
+$("btnHold").addEventListener("pointerdown", e => { e.preventDefault(); holdStart = performance.now(); holdT = requestAnimationFrame(holdTick); });
+["pointerup", "pointerleave", "pointercancel"].forEach(ev => $("btnHold").addEventListener(ev, () => { if (holdT) cancelAnimationFrame(holdT); holdT = null; $("holdBar").style.transform = "scaleX(0)"; }));
+// baget: iki parmakla 2 sn basılı tut (başparmak ekranda dururken kazara bitmesin)
+let st2T = null, st2Start = 0;
+function st2Tick(){ const p = (performance.now() - st2Start) / 2000; $("stHold").style.transform = `scaleX(${Math.min(1, p)})`; if (p >= 1){ st2T = null; endSession(); } else st2T = requestAnimationFrame(st2Tick); }
+function st2Check(e){
+  const n = e.touches ? e.touches.length : 0;
+  if (e.cancelable) e.preventDefault();
+  if (n >= 2){ if (!st2T){ st2Start = performance.now(); st2T = requestAnimationFrame(st2Tick); } }
+  else if (st2T){ cancelAnimationFrame(st2T); st2T = null; $("stHold").style.transform = "scaleX(0)"; }
+}
+["touchstart", "touchmove", "touchend", "touchcancel"].forEach(ev => $("stage").addEventListener(ev, st2Check, { passive: false }));
+document.addEventListener("keydown", e => { if (e.key === "Escape" && S.mode === "dance") endSession(); });
+
+function endSession(){
+  if (S.mode !== "dance" && S.mode !== "sim") return;
+  const hadData = S.mode === "sim" || S.live;
+  autoOff(); rollStop(); S.live = false; S.mode = "idle"; calib = null;
+  try { wakeLock && wakeLock.release(); } catch(e){}
+  $("pocket").hidden = true; $("stage").hidden = true;
+  $("holdBar").style.transform = "scaleX(0)"; $("stHold").style.transform = "scaleX(0)";
+  if (!hadData){ discardRecording(); $("status").textContent = "Hazır"; return; }
+  $("status").innerHTML = "Bitti: <b>dinle</b>";
+  const dur = (performance.now() - S.started) / 1000;
+  $("endStats").innerHTML = [["Süre", `${Math.floor(dur / 60)}:${String(Math.round(dur % 60)).padStart(2, "0")}`], ["Vuruş", S.hits], [kit.mode === "bel" ? "Basış" : "Ritim", S.steps], ["Usul", S.usul ? `${S.usul.sig}<small>${S.usul.sub}</small>` : "–"]]
+    .map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  const used = [...new Set(S.all.map(e => e.motif))];
+  const names = { baklava: "baklava darbuka düm", ucgen: "üçgen darbuka tek", kumsaati: "kum saati darbuka slap", daire: "daire def vuruş", arti: "artı def zili", goz: "göz bendir", kare: "kare davul tokmak", cubuk: "çubuk davul çubuk", cift: "çift nokta kaşık", yildiz: "yıldız parmak zili" };
+  $("kilimKey").textContent = used.length ? `Her motif bir vuruş: ${used.map(m => names[m]).join(", ")}.` : "Bu oturumda hiç vuruş algılanmadı.";
+  ["endPanel"].forEach(id => { $(id).hidden = false; });
+  ["startPanel", "simPanel", "testPanel", "kitPanel"].forEach(id => { $(id).hidden = true; });
+  document.querySelector(".modes").hidden = true;
+  requestAnimationFrame(() => drawKilim());
+  const topLevel = window.self === window.top;
+  const finish = () => {
+    const note = $("recNote");
+    if (!recChunks.length){ note.textContent = "Bu tarayıcı ses kaydını desteklemiyor."; $("player").hidden = true; return; }
+    const blob = new Blob(recChunks, { type: recChunks[0].type || "audio/webm" }), url = URL.createObjectURL(blob);
+    $("player").src = url; $("player").hidden = false; note.textContent = "Çalarken çıkan her ses kaydedildi.";
+    if (topLevel){ const a = $("dlAudio"); a.href = url; a.download = `${stamp()}-yuruyen-orkestra-${kit.mode}.${blob.type.includes("mp4") ? "m4a" : "webm"}`; a.hidden = false; }
+  };
+  if (recorder && recorder.state !== "inactive"){ recorder.onstop = finish; recorder.stop(); } else finish();
+}
+$("btnAgain").addEventListener("click", () => {
+  ["endPanel", "dlAudio", "dlKilim"].forEach(id => { $(id).hidden = true; });
+  ["startPanel", "simPanel", "testPanel", "kitPanel"].forEach(id => { $(id).hidden = false; });
+  document.querySelector(".modes").hidden = false;
+  $("status").textContent = "Hazır"; S.events = []; S.hits = 0; S.intervals = []; updateStats();
+});
+
+/* ---------- slot testi ---------- */
+const testCounts = {}; const testRecent = [];
+function renderGrid(){
+  $("testGrid").innerHTML = slots().map(s => `<div class="cell" data-slot="${s.id}"><span class="c-name">${s.short}</span><span class="c-snd"></span><span class="c-n">0</span></div>`).join("");
+}
+function testLight(id){
+  if (S.mode !== "test") return;
+  testCounts[id] = (testCounts[id] || 0) + 1;
+  const cell = $("testGrid").querySelector(`[data-slot="${id}"]`);
+  if (cell){ cell.querySelector(".c-n").textContent = testCounts[id]; cell.classList.add("lit"); clearTimeout(cell._t); cell._t = setTimeout(() => cell.classList.remove("lit"), 220); }
+  const nm = SLOT_ALL[id].short;
+  if (!SLOT_ALL[id].cont || testRecent[0] !== nm){ testRecent.unshift(nm); testRecent.length = Math.min(testRecent.length, 6); }
+  $("testLog").textContent = "Son algılananlar: " + testRecent.join(", ");
+}
+function resetTestCounts(){ slots().forEach(s => { testCounts[s.id] = 0; }); testRecent.length = 0; $("testGrid").querySelectorAll(".c-n").forEach(n => { n.textContent = 0; }); $("testLog").textContent = ""; }
+function stopTest(){ if (S.mode !== "test") return; S.mode = "idle"; S.live = false; $("testLive").hidden = true; $("btnTest").hidden = false; $("status").textContent = "Hazır"; try { wakeLock && wakeLock.release(); } catch(e){} }
+$("btnTest").addEventListener("click", async () => {
+  const ok = await ensureSensor($("testWarn")); if (!ok) return;
+  stopSim(); S.mode = "test"; S.live = false; requestWake();
+  $("btnTest").hidden = true; $("testLive").hidden = false; resetTestCounts(); refreshLabels();
+  $("status").innerHTML = "Test: <b>dinliyor</b>"; $("testZone").textContent = "";
+  const bel = kit.mode === "bel";
+  for (let i = bel ? 5 : 3; i > 0; i--){
+    $("testMsg").textContent = bel ? `Telefonu belinin arkasına yerleştir: ${i}` : `Telefonu kumanda gibi tut, ekran yukarı: ${i}`;
+    tek(ctx.currentTime + 0.01, 0.3); await wait(1000); if (S.mode !== "test") return;
+  }
+  $("testMsg").textContent = bel ? "Hareketsiz dur, ölçüyorum." : "Kolunu öne uzat ve kıpırdama.";
+  const g = await calibrate(1500); if (S.mode !== "test") return;
+  if (g){ if (bel) det.setGravity(g); else bdet.calibrate(g); }
+  resetSession(); hasGyro = false; S.live = true; dum(ctx.currentTime + 0.01, 0.8);
+  $("testMsg").textContent = "Hazır. Hareket et; her algılama sesini çalar.";
+  await wait(1500);
+  if (S.mode === "test" && !hasGyro) $("testMsg").textContent = bel ? "Hazır. Bu telefon dönüş hızını vermiyor; dönüş slotu çalışmaz." : "Hazır. Bu telefon dönüş hızını vermiyor; bölgeler ve bilek çevirme az güvenilir olur.";
+});
+$("btnTestEnd").addEventListener("click", stopTest);
+$("btnTestReset").addEventListener("click", resetTestCounts);
+function setFlip(f){ kit.flip = f; det.flip = f; $("flip").checked = f === -1; saveKit(); }
+$("btnFlip").addEventListener("click", () => { setFlip(-kit.flip); $("testMsg").textContent = "Sağ ile sol çevrildi. Sağ ayağınla basıp tekrar kontrol et."; });
+
+/* ---------- sensörsüz deneme ---------- */
+const SIM_V = { sagSert: () => rnd(0.8, 1), solSert: () => rnd(0.8, 1), sagHafif: () => rnd(0.5, 0.75), solHafif: () => rnd(0.5, 0.75), kenar: () => rnd(0.55, 0.8) };
+function simFire(id){ beginSim(); fire(id, (SIM_V[id] || (() => rnd(0.75, 0.95)))(), {}); }
+let rollT = null;
+function rollStart(){ if (rollT) return; beginSim(); const id = rollSlot(); const tick = () => { fire(id, rnd(0.45, 0.9)); if (S.mode !== "dance") S.shimmy = rnd(0.55, 0.8); rollT = setTimeout(tick, rnd(45, 75)); }; tick(); }
+function rollStop(){ clearTimeout(rollT); rollT = null; }
+function renderPads(){
+  $("pads").innerHTML = slots().map(s => `<button type="button" data-slot="${s.id}"><span>${s.short}</span><small></small></button>`).join("");
+  $("pads").querySelectorAll("button").forEach(b => {
+    const id = b.dataset.slot;
+    if (SLOT_ALL[id].cont){
+      b.addEventListener("pointerdown", e => { e.preventDefault(); rollStart(); });
+      ["pointerup", "pointerleave", "pointercancel"].forEach(ev => b.addEventListener(ev, rollStop));
+      b.addEventListener("contextmenu", e => e.preventDefault());
+    } else b.addEventListener("click", () => simFire(id));
+  });
+}
+let autoT = null, autoN = 0;
+function autoOff(){ clearTimeout(autoT); autoT = null; $("pAuto").setAttribute("aria-pressed", "false"); }
+const AUTO = {
+  bel:   { order: ["sagSert", "sagHafif", "solHafif", "solSert"], x: { "7-0": "zipla", "5-3": "cokus", "3-1": "kalca", "6-2": "donus" } },
+  baget: { order: ["asagiOrta", "kenar", "kenar", "asagiOrta"], x: { "7-0": "asagiYuksek", "5-3": "asagiAlcak", "3-1": "saga", "6-2": "sola", "1-3": "one" } }
+};
+$("pAuto").onclick = () => {
+  if (autoT){ autoOff(); return; }
+  beginSim(); $("pAuto").setAttribute("aria-pressed", "true"); autoN = 0;
+  const A = AUTO[kit.mode], unit = 185, groups = [2, 2, 2, 3];
+  const loop = () => {
+    const i = autoN % 4, bar = Math.floor(autoN / 4);
+    simFire(A.x[`${bar % 8}-${i}`] || A.order[i]);
+    if (i === 3 && bar % 4 === 2){ const id = rollSlot(); for (let j = 1; j < 7; j++) setTimeout(() => fire(id, 0.8 - j * 0.08), j * 50); }
+    autoN++; autoT = setTimeout(loop, groups[i] * unit);
+  };
+  loop();
+};
+$("pEnd").onclick = () => endSession();
+$("pClear").onclick = () => { stopSim(); S.events = []; S.hits = 0; S.intervals = []; S.shimmy = 0; updateStats(); if (S.mode === "idle") $("status").textContent = "Hazır"; };
+const rollKey = () => { const i = slots().findIndex(s => s.cont); return String((i + 1) % 10); };
+document.addEventListener("keydown", e => {
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target && (e.target.tagName === "SELECT" || e.target.tagName === "INPUT")) return;
+  if (!/^[0-9]$/.test(e.key) || S.mode === "dance") return;
+  const slot = slots()[e.key === "0" ? 9 : +e.key - 1];
+  if (slot.cont) rollStart(); else simFire(slot.id);
+});
+document.addEventListener("keyup", e => { if (e.key === rollKey()) rollStop(); });
+
+/* ---------- ayarlar ---------- */
+$("bias").value = kit.bias; $("bounce").value = kit.bounce; $("flip").checked = kit.flip === -1;
+$("bias").addEventListener("input", e => { kit.bias = parseFloat(e.target.value); det.bias = kit.bias; saveKit(); });
+$("bounce").addEventListener("input", e => { kit.bounce = parseFloat(e.target.value); det.bounceMs = kit.bounce; saveKit(); });
+$("flip").addEventListener("change", e => setFlip(e.target.checked ? -1 : 1));
+$("sens").value = kit.sens; $("zone").value = kit.zone; $("zoneVal").textContent = `${kit.zone}°`;
+$("sens").addEventListener("input", e => { kit.sens = parseFloat(e.target.value); bdet.sens = kit.sens; saveKit(); });
+$("zone").addEventListener("input", e => { kit.zone = parseFloat(e.target.value); bdet.zoneDeg = kit.zone; $("zoneVal").textContent = `${kit.zone}°`; saveKit(); });
+function paintHand(){ document.querySelectorAll("[data-hand]").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.hand === kit.hand))); }
+document.querySelectorAll("[data-hand]").forEach(b => b.addEventListener("click", () => { kit.hand = +b.dataset.hand; bdet.hand = kit.hand; saveKit(); paintHand(); }));
+paintHand();
+
+/* ---------- çizim: motifler, canlı şerit, bölge göstergesi, kilim ---------- */
+function motif(g, m, x, y, s){
+  g.beginPath();
+  switch (m){
+    case "baklava": g.moveTo(x, y - s); g.lineTo(x + s * 0.8, y); g.lineTo(x, y + s); g.lineTo(x - s * 0.8, y); g.closePath(); g.fill(); break;
+    case "ucgen": g.moveTo(x, y - s * 0.8); g.lineTo(x + s * 0.85, y + s * 0.65); g.lineTo(x - s * 0.85, y + s * 0.65); g.closePath(); g.fill(); break;
+    case "kumsaati": g.moveTo(x - s * 0.7, y - s); g.lineTo(x + s * 0.7, y - s); g.lineTo(x - s * 0.7, y + s); g.lineTo(x + s * 0.7, y + s); g.closePath(); g.fill(); break;
+    case "daire": g.arc(x, y, s * 0.72, 0, Math.PI * 2); g.fill(); break;
+    case "arti": { const w = Math.max(1.5, s * 0.3); g.fillRect(x - w / 2, y - s * 0.65, w, s * 1.3); g.fillRect(x - s * 0.65, y - w / 2, s * 1.3, w); break; }
+    case "goz": g.lineWidth = Math.max(1.6, s * 0.22); g.moveTo(x, y - s); g.lineTo(x + s, y); g.lineTo(x, y + s); g.lineTo(x - s, y); g.closePath(); g.stroke(); g.beginPath(); g.arc(x, y, s * 0.24, 0, Math.PI * 2); g.fill(); break;
+    case "kare": g.fillRect(x - s * 0.62, y - s * 0.62, s * 1.24, s * 1.24); break;
+    case "cubuk": { const w = Math.max(1.6, s * 0.28); g.fillRect(x - w / 2, y - s, w, s * 2); g.fillRect(x - s * 0.45, y - s, s * 0.9, w); break; }
+    case "cift": g.arc(x - s * 0.42, y, s * 0.36, 0, Math.PI * 2); g.fill(); g.beginPath(); g.arc(x + s * 0.42, y, s * 0.36, 0, Math.PI * 2); g.fill(); break;
+    case "yildiz": { const h = s * 0.58; g.fillRect(x - h, y - h, h * 2, h * 2); g.save(); g.translate(x, y); g.rotate(Math.PI / 4); g.fillRect(-h, -h, h * 2, h * 2); g.restore(); break; }
+  }
+}
+const ZONE_NAMES = { alcak: "Alçak", orta: "Orta", yuksek: "Yüksek" };
+const cv = $("roll"), g2 = cv.getContext("2d");
+function draw(){
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (w && (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr))){ cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  g2.setTransform(dpr, 0, 0, dpr, 0, 0); g2.clearRect(0, 0, w, h);
+  const n = INSTS.length, lh = h / n, now = performance.now(), win = 7000;
+  for (let i = 0; i < n; i++){ g2.fillStyle = i % 2 ? "rgba(255,255,255,.025)" : "rgba(0,0,0,.12)"; g2.fillRect(0, i * lh, w, lh); }
+  for (const e of S.events){
+    const age = now - e.t; if (age > win || age < 0) continue;
+    const x = w - 10 - (age / win) * (w - 10), y = e.inst * lh + lh / 2, s = lh * (0.2 + 0.18 * e.v);
+    g2.globalAlpha = Math.max(0.12, 1 - age / win);
+    g2.fillStyle = g2.strokeStyle = INSTS[e.inst].col;
+    motif(g2, e.motif, x, y, s);
+  }
+  g2.globalAlpha = 1;
+  $("lanes").querySelectorAll("span").forEach((el, i) => el.classList.toggle("on", now - S.lastLane[i] < 260));
+  if ((S.mode !== "dance" && S.mode !== "test") || kit.mode === "baget") S.shimmy *= 0.93;
+  $("sShake").textContent = Math.round(S.shimmy * 100);
+  // baget: canlı bölge göstergesi
+  if (kit.mode === "baget" && S.live){
+    const st = bdet.state;
+    if (S.mode === "dance"){ setZones(st.kenar ? null : st.zone); $("stPose").textContent = st.kenar ? "Telefon yana dönük: kenar vuruşu" : "Ekran yukarı"; }
+    if (S.mode === "test") $("testZone").textContent = `Bölge: ${st.kenar ? "kenar (telefon yana dönük)" : ZONE_NAMES[st.zone].toLocaleLowerCase("tr")}, kol açısı ${Math.round(st.pitch)}°.`;
+  }
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+const ROWS = [0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0];
+function drawKilim(){
+  const kc = $("kilim"), dpr = window.devicePixelRatio || 1, w = kc.clientWidth, h = kc.clientHeight;
+  kc.width = Math.round(w * dpr); kc.height = Math.round(h * dpr);
+  const g = kc.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = "#EDE3CF"; g.fillRect(0, 0, w, h);
+  const edge = 9; g.fillStyle = INSTS[0].ink;
+  for (let x = 0; x < w; x += 14){ g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 14, 0); g.lineTo(x + 7, edge); g.fill(); g.beginPath(); g.moveTo(x, h); g.lineTo(x + 14, h); g.lineTo(x + 7, h - edge); g.fill(); }
+  const ev = S.all, pad = 14, top = edge + 6, rh = (h - 2 * top) / ROWS.length;
+  if (ev.length){
+    const t0 = ev[0].t, t1 = Math.max(ev[ev.length - 1].t, t0 + 1);
+    for (const e of ev){
+      const x = pad + (e.t - t0) / (t1 - t0) * (w - 2 * pad);
+      g.fillStyle = g.strokeStyle = INSTS[e.inst].ink;
+      ROWS.forEach((inst, r) => { if (inst === e.inst) motif(g, e.motif, x, top + r * rh + rh / 2, rh * 0.36 * (0.65 + 0.35 * e.v)); });
+    }
+  }
+  if (window.self === window.top){ try { const a = $("dlKilim"); a.href = kc.toDataURL("image/png"); a.download = `${stamp()}-yuruyen-orkestra-kilim.png`; a.hidden = false; } catch(e){} }
+}
+
+applyMode();
+// açılışta örnek görüntü: 9/8 kalıbı, tezgâh boş kalmasın
+(() => {
+  const t0 = performance.now() - 6800, gaps = [2, 2, 2, 3]; let t = t0, n = 0;
+  while (t < t0 + 6600){
+    const i = n % 4;
+    S.events.push({ inst: 0, motif: i === 0 || i === 3 ? "baklava" : "ucgen", t, v: i === 0 ? 0.9 : 0.6 });
+    if (n === 6) for (let j = 0; j < 5; j++) S.events.push({ inst: 1, motif: "arti", t: t + 120 + j * 55, v: 0.7 });
+    if (n === 9) S.events.push({ inst: 5, motif: "yildiz", t: t + 40, v: 0.9 });
+    if (n === 11) S.events.push({ inst: 4, motif: "cift", t: t + 90, v: 0.7 });
+    if (n === 13) S.events.push({ inst: 2, motif: "goz", t: t + 60, v: 0.9 });
+    if (n === 4) S.events.push({ inst: 3, motif: "kare", t: t + 30, v: 0.8 });
+    t += gaps[i] * 185; n++;
+  }
+})();
+})();
+</script>
+</body>
+</html>
