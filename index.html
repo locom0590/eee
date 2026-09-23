@@ -38,6 +38,7 @@
   .stats span{ font-size:12px; color:var(--mute); text-transform:uppercase; letter-spacing:.06em; }
   .vbar{ height:6px; border-radius:3px; background:var(--line); overflow:hidden; margin:0 0 14px; }
   .vbar i{ display:block; height:100%; width:0; background:linear-gradient(90deg, var(--tek), var(--dum)); transition:width 60ms; }
+  .dbg{ font:12px/1.3 ui-monospace, Menlo, monospace; color:var(--mute); text-align:center; min-height:16px; margin:-8px 0 10px; }
 
   /* ayarlar */
   .row{ display:flex; align-items:center; gap:12px; margin:8px 0; }
@@ -74,6 +75,7 @@
   <div><b id="sBpm">–</b><span>senin tempon</span></div>
 </div>
 <div class="vbar"><i id="vbar"></i></div>
+<div class="dbg" id="dbg"></div>
 
 <div id="setup">
   <div class="chips" id="chips">
@@ -220,43 +222,41 @@ function registerHit(v){
    Ses yalnızca ikincide çıkar: savurma tek başına, yavaş hareketler ve yürüme sallantısı ses vermez.
    Duruş ilk örnekte yakalanır (bekleme yok); şiddet, savurmanın gücünden okunur. Yön ve tutuş fark etmez. */
 const DET = {
-  swingMin: 1.8,    // m/s²: "hareket var" sayılması için
-  hitMin: 4.5,      // m/s²: duruş ivmesi alt sınırı (ölçek büyüdükçe yükselir)
-  jerkMin: 5.0,     // m/s² / örnek: duruş ne kadar ani olmalı (savurma yavaş yükselir, çarpma sıçrar)
+  swingMin: 1.2,    // m/s²: "hareket var" sayılması için (akış vektörünün büyüklüğü)
+  hitMin: 4.0,      // m/s²: duruş ivmesi alt sınırı
+  hitCap: 5.5,      // m/s²: eşik ölçekle büyür ama bunu geçmez (sert vuruşlar hafifleri kilitlemesin)
+  jerkMin: 3.5,     // m/s² / örnek: duruş ne kadar ani olmalı (savurma yavaş yükselir, çarpma sıçrar)
   refractory: 120,  // ms: iki vuruş arası en az süre
-  swingWindow: 320, // ms: savurma bu süre içinde bir duruşla bitmeli
-  runMax: 10,       // şiddet ölçeği: kendi kendine öğrenir
-  tFire: 0, prevMag: 0, swingDir: null, swingPeak: 0, tSwing: 0, peakTrack: 0, trackUntil: 0, lastPeak: 0
+  tau: 90,          // ms: hareket yönü bu süreyle kayan ortalamadan izlenir (sürekli tazelenir, takılmaz)
+  runMax: 10,       // şiddet ölçeği: kendi kendine öğrenir, hızlı gevşer
+  tFire: 0, prevMag: 0, tPrev: 0, flow: [0, 0, 0], peakTrack: 0, trackUntil: 0, lastPeak: 0
 };
 function detSample(ax, ay, az, tMs){
   const mag = Math.hypot(ax, ay, az), jerk = mag - DET.prevMag; DET.prevMag = mag;
-  // vuruş sonrası 70 ms: gerçek tepeyi izle, ölçeği ona göre öğren
+  const dt = DET.tPrev ? clamp(tMs - DET.tPrev, 4, 60) : 16; DET.tPrev = tMs;
+  // vuruş sonrası 70 ms: gerçek tepeyi izle, ölçeği ona göre öğren; bu sırada akış sıfırda kalır (geri sekme vuruş sayılmasın)
   if (DET.trackUntil){
     if (tMs < DET.trackUntil){ DET.peakTrack = Math.max(DET.peakTrack, mag); return; }
-    DET.lastPeak = DET.peakTrack; DET.runMax = Math.max(6, DET.peakTrack, DET.runMax * 0.985); DET.trackUntil = 0;
+    DET.lastPeak = Math.min(40, DET.peakTrack); DET.runMax = clamp(Math.max(DET.lastPeak, DET.runMax * 0.96), 6, 40); DET.trackUntil = 0;
+    $("dbg").textContent = `son vuruş ${DET.lastPeak.toFixed(1)} m/s² · ölçek ${DET.runMax.toFixed(1)} · ${dbgLat}`;
   }
-  if (tMs - DET.tFire < DET.refractory) return;
-  if (mag < DET.swingMin) return;
-  const fresh = DET.swingDir && tMs - DET.tSwing <= DET.swingWindow;
-  if (fresh){
-    const dot = ax * DET.swingDir[0] + ay * DET.swingDir[1] + az * DET.swingDir[2];   // + aynı yön, − ters yön
-    const hitT = Math.max(DET.hitMin, 0.3 * DET.runMax);
+  const f = DET.flow, fmag = Math.hypot(f[0], f[1], f[2]);
+  if (tMs - DET.tFire >= DET.refractory && fmag >= DET.swingMin){
+    const dot = (ax * f[0] + ay * f[1] + az * f[2]) / fmag;   // + hareket yönünde, − hareketin tersine
+    const hitT = Math.min(DET.hitCap, Math.max(DET.hitMin, 0.25 * DET.runMax));
     if (dot <= -hitT && (jerk >= DET.jerkMin || mag >= 2 * hitT)){
-      // savurmaya ters, sert ve ani: vuruş — hemen çal
+      // hareketin tersine, sert ve ani: duruş = vuruş — hemen çal
       DET.tFire = tMs; DET.trackUntil = tMs + 70; DET.peakTrack = mag;
-      const v = clamp(Math.max(DET.swingPeak * 1.4, mag) / DET.runMax, 0.1, 1);
-      DET.swingDir = null; DET.swingPeak = 0;
+      const v = clamp(Math.max(fmag * 1.8, mag) / DET.runMax, 0.1, 1);
+      DET.flow = [0, 0, 0];
       registerHit(v); return;
     }
-    if (dot > 0){ // savurma sürüyor / güçleniyor
-      if (mag > DET.swingPeak){ DET.swingPeak = mag; DET.swingDir = [ax / mag, ay / mag, az / mag]; }
-      DET.tSwing = tMs;
-    }
-  } else {
-    DET.swingDir = [ax / mag, ay / mag, az / mag]; DET.swingPeak = mag; DET.tSwing = tMs;
   }
+  // akış: son ~90 ms'nin kayan ortalaması — yön sürekli güncel kalır
+  const k = 1 - Math.exp(-dt / DET.tau);
+  f[0] += k * (ax - f[0]); f[1] += k * (ay - f[1]); f[2] += k * (az - f[2]);
 }
-let motionSeen = 0;
+let motionSeen = 0, dbgLat = "";
 const G = { est: null };   // yerçekimi kestirimi (yalnızca lineer ivme vermeyen cihazlar için)
 function onMotion(e){
   let ax, ay, az;
@@ -318,8 +318,11 @@ async function start(){
   motionSeen = 0;
   const ok = await ensureSensor();          // ilk iş: izin (araya await girmeden)
   if (!ok && hasTouch) return;              // telefonda sensör yoksa başlama, uyarı ekranda
+  initAudio(); try { await ctx.resume(); } catch(e){}
   S.hits = 0; S.synced = 0; S.times = []; $("sHits").textContent = 0; $("sSync").textContent = "–"; $("sBpm").textContent = "–";
-  DET.state = "idle"; DET.runMax = 12;
+  Object.assign(DET, { runMax: 10, tFire: 0, prevMag: 0, tPrev: 0, flow: [0, 0, 0], peakTrack: 0, trackUntil: 0, lastPeak: 0 });
+  G.est = null;
+  const lat = ctx.outputLatency || ctx.baseLatency; dbgLat = lat ? `ses gecikmesi ~${Math.round(lat * 1000)} ms` : ""; $("dbg").textContent = dbgLat;
   P.bpm = +$("tempo").value; P.vol = +$("pvol").value / 100;
   $("setup").hidden = true; $("btnTry").hidden = true;
   $("btnStart").textContent = "Bitir"; $("btnStart").classList.add("stop");
