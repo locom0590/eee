@@ -98,7 +98,7 @@
   <div class="row"><label for="tempo">Tempo</label><input id="tempo" type="range" min="60" max="180" value="100"><output id="tempoOut">100</output></div>
   <div class="row"><label for="pvol">Nabız sesi</label><input id="pvol" type="range" min="0" max="100" value="55"><output id="pvolOut">55</output></div>
   <div class="row"><label for="sens">Hassasiyet</label><input id="sens" type="range" min="1" max="5" value="3"><output id="sensOut">3</output></div>
-  <div class="row"><label for="detSel">Algılama</label><select id="detSel"><option value="gyro">Bilek tepesi (jiroskop) — yeni</option><option value="acc">Ani duruş (ivme) — eski</option></select></div>
+  <div class="row"><label for="detSel">Algılama</label><select id="detSel"><option value="gyro">Bilek tepesi (jiroskop) — önerilen</option><option value="acc">Ani duruş (ivme) — jiroskopsuz telefon için</option></select></div>
   <div class="note" id="homeNote" hidden>Tarayıcı düğmelerine el değmesin diye: paylaş menüsünden <strong>Ana Ekrana Ekle</strong> deyip oradan aç; çubuksuz, tam ekran çalışır.</div>
 </div>
 
@@ -290,19 +290,36 @@ function detSample(ax, ay, az, tMs){
 /* ========= jiroskop dedektörü (varsayılan, jiroskop varsa) =========
    Havada davul: çarpma yok, dolayısıyla "duruş" da yok. Bileğin kırılışı jiroskopta tek ve temiz bir açısal hız tepesi verir;
    ses o tepede çıkar — küçük, doğal bir bilek vuruşu yeter, kamçı gerekmez. Tepe = hız yükseldi, eşiği geçti, azalmaya başladı. */
+/* v5.6 (24-09-26 kayıt analizi): her vuruş jiroskopta üç tepe bırakır — asıl vuruş, +50–90 ms'de TERS yönde geri tepme,
+   ~200 ms'de TERS yönde geri dönüş. Bu yüzden "yön kilidi": ilk güçlü tepe vuruş yönünü belirler, yalnız o yöndeki tepeler çalar.
+   Yön, kabul edilen vuruşlarla yavaşça güncellenir (tutuş kayarsa izler); 1,5 sn vuruş yokken ters yönde güçlü tepeler gelirse yön yeniden kilitlenir. */
 const GY = {
-  wMin0: 160,       // °/s: bu hızı aşan bir tepe vuruştur (hassasiyet çarpanıyla ölçeklenir)
-  scale: 700,       // °/s: şiddet 1.0 sayılan tepe
-  refractory: 70,   // ms
-  k: 1.0, prev: 0, prev2: 0, rising: false, peak: 0, tFire: 0
+  wMin0: 300,       // °/s: bu hızı aşan ve doğru yöndeki tepe vuruştur (hassasiyet çarpanıyla ölçeklenir)
+  scale: 1500,      // °/s: şiddet 1.0 sayılan tepe (kayıtta vuruşlar 700–1560 °/s)
+  refractory: 120,  // ms
+  lockMul: 2.0,     // yönü kilitlemek için tepe en az eşik × bu kadar olmalı
+  lockMin: 450,     // °/s: ve her durumda en az bu kadar (hassasiyet 5'te ısınma hareketine kilitlenmesin)
+  simMin: 0.5,      // dönme vektörünün kilitli yönle benzerliği (kosinüs) en az bu kadar
+  k: 1.0, prev: 0, prev2: 0, rising: false, peak: 0, pv: [0, 0, 0], tFire: 0, dir: null, tStray: -1e9, avg: 0
 };
 function gyroSample(gx, gy, gz, tMs){
   const w = Math.hypot(gx, gy, gz), wT = GY.wMin0 * GY.k;
-  if (w > GY.prev){ GY.rising = true; GY.peak = w; }
+  if (w > GY.prev){ GY.rising = true; GY.peak = w; GY.pv = [gx, gy, gz]; }
   else if (GY.rising){
     // tepe geçildi (bir önceki örnek tepeydi)
     GY.rising = false;
-    if (GY.peak >= wT && tMs - GY.tFire >= GY.refractory){
+    const pk = GY.peak, u = GY.pv.map(c => c / (pk || 1));
+    const lockT = Math.max(wT * GY.lockMul, GY.lockMin);
+    if (!GY.dir && pk >= lockT){ GY.dir = u; GY.avg = pk; }          // yön kilidi
+    const sim = GY.dir ? u[0] * GY.dir[0] + u[1] * GY.dir[1] + u[2] * GY.dir[2] : -1;
+    if (GY.dir && sim < GY.simMin && pk >= lockT && (tMs - GY.tFire > 1500 || pk > 1.3 * GY.avg)){
+      // ters yönde güçlü tepeler: ya uzun süredir vuruş yok (tutuş değişti) ya da kabul edilenlerden belirgin güçlü (yanlış yöne kilitlenmiş) → 2 sn içinde 2. böyle tepede yön ona çevrilir
+      if (tMs - GY.tStray < 2000){ GY.dir = u; GY.avg = pk; GY.tStray = -1e9; } else GY.tStray = tMs;
+    }
+    if (GY.dir && sim >= GY.simMin && pk >= wT && tMs - GY.tFire >= GY.refractory){
+      const d = GY.dir.map((c, i) => c * 0.8 + u[i] * 0.2), n = Math.hypot(d[0], d[1], d[2]) || 1;
+      GY.dir = d.map(c => c / n);                                                   // yönü yavaşça güncelle
+      GY.avg = GY.avg * 0.8 + pk * 0.2;                                              // kabul edilen vuruşların tipik gücü
       GY.tFire = tMs;
       const v = clamp((GY.peak - wT * 0.5) / (GY.scale - wT * 0.5), 0.15, 1);
       $("dbg").textContent = `tepe ${Math.round(GY.peak)} °/s · eşik ${Math.round(wT)} · ${dbgLat}`;
@@ -341,7 +358,7 @@ function recStart(){
 }
 function recFinish(){
   if (!REC.on) return; REC.on = false; clearTimeout(REC.timer);
-  const meta = { app: "bedenritim v5.5", tarih: new Date().toISOString(), cihaz: navigator.userAgent, dedektor: useGyro && gyroSeen ? "jiroskop" : "ivme",
+  const meta = { app: "bedenritim v5.6", tarih: new Date().toISOString(), cihaz: navigator.userAgent, dedektor: useGyro && gyroSeen ? "jiroskop" : "ivme",
     hassasiyet: +$("sens").value, usul: pattern, tempo: P.bpm, nabizSesi: P.vol, sesGecikmesiMs: ctx && (ctx.outputLatency || ctx.baseLatency) ? Math.round((ctx.outputLatency || ctx.baseLatency) * 1000) : null,
     ornekSayisi: REC.rows.length, sureMs: REC.rows.length ? REC.rows[REC.rows.length - 1][0] : 0,
     kolonlar: ["t_ms", "ax", "ay", "az", "gyro_alpha", "gyro_beta", "gyro_gamma"] };
@@ -405,7 +422,7 @@ async function start(rec){
   initAudio(); try { await ctx.resume(); } catch(e){}
   S.hits = 0; S.synced = 0; S.times = []; $("sHits").textContent = 0; $("sSync").textContent = "–"; $("sBpm").textContent = "–";
   Object.assign(DET, { tFire: 0, prevA: [0, 0, 0], prevA2: [0, 0, 0], tPrev: 0, flow: [0, 0, 0], peakTrack: 0, trackUntil: 0, lastPeak: 0 });
-  Object.assign(GY, { prev: 0, prev2: 0, rising: false, peak: 0, tFire: 0 });
+  Object.assign(GY, { prev: 0, prev2: 0, rising: false, peak: 0, pv: [0, 0, 0], tFire: 0, dir: null, tStray: -1e9, avg: 0 });
   useGyro = $("detSel").value === "gyro";
   if (rec) recStart();
   goFullscreen(); trapBack();
@@ -479,8 +496,8 @@ $("pvol").addEventListener("input", e => { $("pvolOut").textContent = e.target.v
 $("sens").addEventListener("input", e => { $("sensOut").textContent = e.target.value; setSens(+e.target.value); try { localStorage.setItem("br-sens", e.target.value); } catch(err){} });
 try { const sv = localStorage.getItem("br-sens"); if (sv){ $("sens").value = sv; $("sensOut").textContent = sv; } } catch(e){}
 setSens(+$("sens").value);
-$("detSel").addEventListener("change", e => { try { localStorage.setItem("br-det", e.target.value); } catch(err){} });
-try { const dv = localStorage.getItem("br-det"); if (dv) $("detSel").value = dv; } catch(e){}
+$("detSel").addEventListener("change", e => { try { localStorage.setItem("br-det2", e.target.value); } catch(err){} });
+try { const dv = localStorage.getItem("br-det2"); if (dv) $("detSel").value = dv; } catch(e){}
 
 /* ---- tarayıcı çubuğuna / geri tuşuna değen el: üç önlem ---- */
 // (a) Android: Başla dokunuşunda tam ekran (tarayıcı çubuğu kaybolur). iPhone Safari bunu desteklemez.
