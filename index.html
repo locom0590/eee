@@ -31,6 +31,8 @@
     box-shadow:0 0 0 0 rgba(224,168,58,0); font-size:64px; font-weight:700; color:var(--ink); }
   .pulse.beat{ transform:scale(1); }
   .pulse.dum{ transform:scale(1.06); }
+  .pulse.acc-dum{ box-shadow:0 0 48px 10px rgba(224,140,58,.6); background:radial-gradient(circle at 40% 35%, #7a4a26, #2a1a10 70%); }
+  .pulse.acc-tek{ box-shadow:0 0 26px 4px rgba(245,225,185,.35); }
   .hit{ position:absolute; width:min(58vw,260px); aspect-ratio:1; border-radius:50%; pointer-events:none;
     border:4px solid var(--tek); opacity:0; transform:scale(1); }
   .hit.go{ animation:hitAnim 380ms ease-out; }
@@ -156,7 +158,16 @@ function burst(t, freq, q, peak, dec){
   s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + dec + 0.05);
 }
 /* Kullanıcının tek sesi: şiddet (v: 0–1) tınıyı taşır — hafif → ince "tek", sert → derin "düm" */
-function hitSound(t, v){
+/* v5.8 vurgu: vuruş nabzın düm'üne ±60 ms içinde düşerse dolgun gövde eklenir; tek'ine düşerse hafif parlaklık. Dışarıda normal ses. */
+const ACCENT_WIN = 0.060;   // sn
+function hitSound(t, v, acc){
+  if (acc === "dum"){
+    tone(t, 130, 46, 0.22, 0.55 + 0.3 * v, 0.42);                                          // derin gövde
+    burst(t, 260, 0.9, 0.18 + 0.12 * v, 0.07);                                             // alçak "tok"
+  } else if (acc === "tek"){
+    burst(t, 4600, 2.4, 0.22 + 0.1 * v, 0.035);                                            // parlak tık
+    tone(t, 980, 640, 0.02, 0.16, 0.05, "triangle");
+  }
   const dum = v * v;                 // derin gövde sert vuruşta açılır
   const tek = 0.95 - 0.45 * v;       // ince vuruş hafifte baskın, sertte geri çekilir
   tone(t, 190 + 40 * v, 62, 0.12 + 0.08 * v, 0.95 * dum + 0.08, 0.22 + 0.22 * v);       // gövde
@@ -223,26 +234,37 @@ function flashHit(v, sync){
   vbar.style.width = Math.round(v * 100) + "%";
 }
 
+function flashAccent(acc){
+  if (!acc) return;
+  pulseEl.classList.remove("acc-dum", "acc-tek"); void pulseEl.offsetWidth;
+  pulseEl.classList.add("acc-" + acc);
+  setTimeout(() => pulseEl.classList.remove("acc-dum", "acc-tek"), acc === "dum" ? 220 : 140);
+}
 /* ========= oturum / vuruş ========= */
 const S = { live: false, hits: 0, synced: 0, times: [], t0: 0 };
 function registerHit(v){
   if (!S.live) return;
   initAudio();
   const now = ctx.currentTime;
-  let when = now, sync = null;
+  let when = now, sync = null, acc = null;
   if (P.on){
     const g = gridInfo(now);
+    // vurgu: en yakın sekizlik düm/tek mi, ve ±60 ms içinde mi
+    if (Math.abs(g.off) <= ACCENT_WIN){
+      const pat = PATTERNS[pattern], len = pat.len, k = Math.round((g.near - P.t0) / g.d), pos = ((k % len) + len) % len;
+      acc = pat.D.includes(pos) ? "dum" : pat.T.includes(pos) ? "tek" : null;
+    }
     // Vuruş nabzın hemen önündeyse ("erken"), sesi nabza yapıştır; geç kaldıysa hemen çal
     const ahead = g.near - now;
     if (ahead > 0 && ahead <= 0.045) when = g.near;
     sync = Math.abs(g.off) <= 0.085 || (ahead > 0 && ahead <= 0.045);
     if (sync) S.synced++;
   }
-  hitSound(when, v);
-  if (REC.on) REC.hits.push({ t_ms: Math.round(performance.now() - REC.t0), siddet: +v.toFixed(2) });
+  hitSound(when, v, acc); S.lastAcc = acc;
+  if (REC.on) REC.hits.push({ t_ms: Math.round(performance.now() - REC.t0), siddet: +v.toFixed(2), vurgu: acc });
   S.hits++;
   const pn = performance.now(); S.times.push(pn); if (S.times.length > 9) S.times.shift();
-  flashHit(v, sync);
+  flashHit(v, sync); flashAccent(acc);
   $("sHits").textContent = S.hits;
   $("sSync").textContent = P.on ? Math.round(100 * S.synced / S.hits) + "%" : "–";
   if (S.times.length >= 4){
@@ -369,7 +391,7 @@ function recStart(){
 }
 function recFinish(){
   if (!REC.on) return; REC.on = false; clearTimeout(REC.timer);
-  const meta = { app: "bedenritim v5.7", tarih: new Date().toISOString(), cihaz: navigator.userAgent, dedektor: useGyro && gyroSeen ? "jiroskop" : "ivme",
+  const meta = { app: "bedenritim v5.8", tarih: new Date().toISOString(), cihaz: navigator.userAgent, dedektor: useGyro && gyroSeen ? "jiroskop" : "ivme",
     hassasiyet: +$("sens").value, usul: pattern, tempo: P.bpm, nabizSesi: P.vol, sesGecikmesiMs: ctx && (ctx.outputLatency || ctx.baseLatency) ? Math.round((ctx.outputLatency || ctx.baseLatency) * 1000) : null,
     ornekSayisi: REC.rows.length, sureMs: REC.rows.length ? REC.rows[REC.rows.length - 1][0] : 0,
     kolonlar: ["t_ms", "ax", "ay", "az", "gyro_alpha", "gyro_beta", "gyro_gamma"] };
