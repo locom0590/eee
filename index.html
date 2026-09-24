@@ -58,6 +58,16 @@
   button.big.stop{ --hold:0; color:var(--ink); touch-action:none;
     background:linear-gradient(90deg, #6a4a2a calc(var(--hold) * 100%), #3a2f28 calc(var(--hold) * 100%)); }
   body.live{ touch-action:none; }
+  /* v5.7 kilit perdesi: çalarken bütün ekranı kaplar; yalnız alttaki kilit düğmesi 2 sn basılı tutulunca açar */
+  #lock{ position:fixed; inset:0; z-index:50; display:none; touch-action:none; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+  body.live #lock{ display:block; }
+  body.live #btnStart{ visibility:hidden; }
+  body.touch #lock{ pointer-events:none; }              /* dokunma modunda daireye dokunulabilsin */
+  #lockBtn{ --hold:0; pointer-events:auto; position:absolute; left:50%; transform:translateX(-50%); bottom:max(24px, env(safe-area-inset-bottom));
+    width:min(84%, 360px); padding:18px 12px; border-radius:16px; border:1px solid var(--line); color:var(--ink); font-size:16px; font-weight:600; touch-action:none;
+    background:linear-gradient(90deg, #6a4a2a calc(var(--hold) * 100%), #2a221c calc(var(--hold) * 100%)); }
+  #lockMsg{ position:absolute; left:16px; right:16px; top:calc(max(16px, env(safe-area-inset-top)) + 44px); text-align:center; color:var(--ink); font-size:15px; }
+  #lockMsg:empty{ display:none; }
   button.ghost{ width:100%; margin-top:10px; padding:12px; border-radius:12px; border:1px solid var(--line); background:transparent; color:var(--mute); font-size:15px; }
   .note{ color:var(--mute); font-size:13px; margin:4px 0 10px; }
   select{ flex:1; background:#2a221c; color:var(--ink); border:1px solid var(--line); border-radius:10px; padding:8px; font-size:14px; }
@@ -69,6 +79,7 @@
 </style>
 </head>
 <body>
+<div id="lock" aria-hidden="true"><div id="lockMsg"></div><button id="lockBtn" type="button">Kilitli · açmak için 2 sn basılı tut</button></div>
 <header>
   <h1>Beden Ritim</h1>
   <div id="status">Hazır</div>
@@ -328,7 +339,7 @@ function gyroSample(gx, gy, gz, tMs){
   }
   GY.prev2 = GY.prev; GY.prev = w;
 }
-let motionSeen = 0, gyroSeen = 0, dbgLat = "", useGyro = true;
+let motionSeen = 0, gyroSeen = 0, dbgLat = "", useGyro = true, lastW = 0;
 const G = { est: null };   // yerçekimi kestirimi (yalnızca lineer ivme vermeyen cihazlar için)
 /* ---- ham veri kaydı: 20 sn ivme + jiroskop + nabız/vuruş zamanları ---- */
 const REC = { on: false, rows: [], beats: [], hits: [], t0: 0, dur: 20000, timer: null };
@@ -346,7 +357,7 @@ function onMotion(e){
   }
   motionSeen++;
   const r = e.rotationRate, hasG = r && r.alpha != null;
-  if (hasG) gyroSeen++;
+  if (hasG){ gyroSeen++; lastW = Math.hypot(r.alpha, r.beta, r.gamma); }
   const t = performance.now();
   if (REC.on) REC.rows.push([Math.round(t - REC.t0), +ax.toFixed(3), +ay.toFixed(3), +az.toFixed(3), hasG ? +r.alpha.toFixed(1) : null, hasG ? +r.beta.toFixed(1) : null, hasG ? +r.gamma.toFixed(1) : null]);
   if (!S.live) return;
@@ -358,7 +369,7 @@ function recStart(){
 }
 function recFinish(){
   if (!REC.on) return; REC.on = false; clearTimeout(REC.timer);
-  const meta = { app: "bedenritim v5.6", tarih: new Date().toISOString(), cihaz: navigator.userAgent, dedektor: useGyro && gyroSeen ? "jiroskop" : "ivme",
+  const meta = { app: "bedenritim v5.7", tarih: new Date().toISOString(), cihaz: navigator.userAgent, dedektor: useGyro && gyroSeen ? "jiroskop" : "ivme",
     hassasiyet: +$("sens").value, usul: pattern, tempo: P.bpm, nabizSesi: P.vol, sesGecikmesiMs: ctx && (ctx.outputLatency || ctx.baseLatency) ? Math.round((ctx.outputLatency || ctx.baseLatency) * 1000) : null,
     ornekSayisi: REC.rows.length, sureMs: REC.rows.length ? REC.rows[REC.rows.length - 1][0] : 0,
     kolonlar: ["t_ms", "ax", "ay", "az", "gyro_alpha", "gyro_beta", "gyro_gamma"] };
@@ -443,7 +454,7 @@ function goLive(sensorOk){
   if (!sensorOk || motionSeen === 0){
     setTimeout(() => {
       if (S.live && motionSeen === 0){
-        touchMode = true;
+        touchMode = true; document.body.classList.add("touch");
         warn(sensorOk ? "Hareket sensöründen veri gelmiyor. Bu sayfayı telefonda, <strong>https</strong> adresinden açmak gerekir." : "Hareket sensörüne izin verilmedi ya da bu cihazda yok.");
         $("hint").textContent = "Deneme modu: vurmak için daireye dokun.";
         setStatus("Dokunma modu");
@@ -455,7 +466,7 @@ function goLive(sensorOk){
   if (useGyro && !gyroSeen) setTimeout(() => { if (S.live && !gyroSeen) $("dbg").textContent = "jiroskop verisi yok → ivme dedektörü"; }, 1500);
 }
 function stop(){
-  S.live = false; touchMode = false; stopPulse(); document.body.classList.remove("live"); leaveFullscreen();
+  S.live = false; S.paused = false; touchMode = false; stopPulse(); document.body.classList.remove("live", "touch"); leaveFullscreen(); lkCancel(); $("lockMsg").textContent = "";
   try { wakeLock && wakeLock.release(); } catch(e){}
   $("setup").hidden = false; $("btnTry").hidden = false; $("btnRec").hidden = false;
   recFinish();
@@ -522,7 +533,37 @@ $("chips").addEventListener("click", e => {
   if (P.on){ P.idx = 0; }
 });
 // arka plana düşünce durdur (ses ve sensör kesilir)
-document.addEventListener("visibilitychange", () => { if (document.hidden && S.live) stop(); });
+/* v5.7: yan tuşa çarpıp ekran kilitlenirse oturum bitmez, duraklar; ekran açılınca kaldığı yerden sürer.
+   Kayıt modunda (20 sn) duraklama veriyi bozacağı için eskisi gibi biter. */
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden){
+    if (S.live && REC.on) stop();
+    else if (S.live){ S.live = false; S.paused = true; stopPulse(); }
+  } else if (S.paused){
+    S.paused = false; S.live = true; requestWake(); trapBack();
+    try { ctx.resume(); } catch(e){}
+    startPulse(); setStatus("Çalıyor");
+    setTimeout(() => { if (S.live && ctx && ctx.state !== "running") $("lockMsg").textContent = "Ses durdu — sürdürmek için ekrana bir kez dokun."; }, 400);
+  }
+});
+/* ---- v5.7 kilit perdesi ----
+   Çalarken ekrandaki her dokunuş yutulur (Safari geri tuşu hariç: o sayfanın dışında — Ana Ekrana Ekle ile kaybolur).
+   Açmak: alttaki düğmeyi 2 sn basılı tut. Telefon sallanırken (jiroskop > 200 °/s) sayaç sıfırlanır: vuruş sırasında avuçla değen düğme kilidi açmaz. */
+const UNLOCK_MS = 2000, lockEl = $("lock"), lockBtn = $("lockBtn"); let lkT = null, lkStart = 0;
+function lkCancel(){ if (lkT){ cancelAnimationFrame(lkT); lkT = null; } lockBtn.style.setProperty("--hold", "0"); }
+function lkTick(){
+  if (gyroSeen && lastW > 200){ lkStart = performance.now(); lockBtn.textContent = "Önce telefonu sabit tut"; }
+  const p = Math.min(1, (performance.now() - lkStart) / UNLOCK_MS);
+  lockBtn.style.setProperty("--hold", p.toFixed(3));
+  if (p >= 1){ lkT = null; lkCancel(); stop(); } else lkT = requestAnimationFrame(lkTick);
+}
+function wakeAudio(){ try { if (ctx && ctx.state !== "running") ctx.resume().then(() => { if (!document.hidden) $("lockMsg").textContent = ""; }); } catch(e){} }
+lockEl.addEventListener("touchstart", e => { e.preventDefault(); wakeAudio(); }, { passive: false });
+lockEl.addEventListener("pointerdown", e => { e.preventDefault(); wakeAudio(); });
+lockEl.addEventListener("click", e => { e.preventDefault(); e.stopPropagation(); });
+lockBtn.addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); wakeAudio(); $("lockMsg").textContent = ""; lkStart = performance.now(); lkCancel(); lkT = requestAnimationFrame(lkTick); });
+const LOCK_TXT = "Kilitli · açmak için 2 sn basılı tut";
+["pointerup", "pointercancel", "pointerleave"].forEach(ev => lockBtn.addEventListener(ev, () => { lkCancel(); lockBtn.textContent = LOCK_TXT; }));
 </script>
 </body>
 </html>
