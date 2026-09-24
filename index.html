@@ -57,6 +57,9 @@
   .row output{ width:56px; text-align:right; font-variant-numeric:tabular-nums; font-size:14px; }
   input[type=range]{ flex:1; accent-color:var(--tek); height:32px; }
   .chips{ display:flex; gap:8px; margin:8px 0 12px; }
+  .seg{ flex:1; display:flex; gap:8px; }
+  .seg .chip{ padding:8px 6px; }
+  .row select{ min-width:0; width:0; }   /* uzun seçenek metni satırı taşırmasın */
   .chip{ flex:1; padding:10px 6px; border-radius:12px; border:1px solid var(--line); background:transparent; color:var(--ink); font-size:14px; }
   .chip[aria-pressed=true]{ background:#2a221c; border-color:var(--tek); }
 
@@ -87,7 +90,7 @@
 <body>
 <div id="lock" aria-hidden="true"><div id="lockMsg"></div><button id="lockBtn" type="button">Kilitli · açmak için 2 sn basılı tut</button></div>
 <header>
-  <h1>Beden Ritim<span class="ver">v6.0</span></h1>
+  <h1>Beden Ritim<span class="ver">v6.1</span></h1>
   <div id="status">Hazır</div>
 </header>
 
@@ -114,9 +117,9 @@
   </div>
   <div class="row"><label for="tempo">Tempo</label><input id="tempo" type="range" min="60" max="180" value="100"><output id="tempoOut">100</output></div>
   <div class="row"><label for="pvol">Nabız sesi</label><input id="pvol" type="range" min="0" max="100" value="55"><output id="pvolOut">55</output></div>
-  <div class="row"><label for="divSel">Bölme</label><select id="divSel"><option value="0">Kapalı — her vuruş çalar</option><option value="3">3 — düm-ta-ta</option><option value="4">4 — düm-ta-ka-ta</option></select></div>
+  <div class="row"><label>Bölme</label><div class="seg" id="divChips"><button class="chip" data-div="0" aria-pressed="true">Kapalı</button><button class="chip" data-div="3" aria-pressed="false">3</button><button class="chip" data-div="4" aria-pressed="false">4</button></div></div>
   <div class="row"><label for="sens">Hassasiyet</label><input id="sens" type="range" min="1" max="5" value="3"><output id="sensOut">3</output></div>
-  <div class="row"><label for="detSel">Algılama</label><select id="detSel"><option value="gyro">Bilek tepesi (jiroskop) — önerilen</option><option value="acc">Ani duruş (ivme) — jiroskopsuz telefon için</option></select></div>
+  <div class="row"><label for="detSel">Algılama</label><select id="detSel"><option value="gyro">Jiroskop (önerilen)</option><option value="acc">İvme (jiroskopsuz telefon)</option></select></div>
   <div class="note" id="homeNote" hidden>Tarayıcı düğmelerine el değmesin diye: paylaş menüsünden <strong>Ana Ekrana Ekle</strong> deyip oradan aç; çubuksuz, tam ekran çalışır.</div>
 </div>
 
@@ -279,13 +282,13 @@ const LEVEL_AT = [0, 4, 8];
 function setLevel(l){ S.level = l; const r = document.querySelector(".ring"); r.classList.remove("l1", "l2"); if (l) r.classList.add("l" + l); }
 function streakHit(){ S.streak++; S.best = Math.max(S.best, S.streak); const l = S.streak >= LEVEL_AT[2] ? 2 : S.streak >= LEVEL_AT[1] ? 1 : 0; if (l !== S.level) setLevel(l); }
 function streakMiss(t){ S.lastMissT = t; const l = Math.max(0, S.level - 1); S.streak = LEVEL_AT[l]; setLevel(l); }   // bir basamak in
-function registerHit(v){
+function registerHit(v, lag){
   if (!S.live) return;
   initAudio();
-  const now = ctx.currentTime;
+  const now = ctx.currentTime, tHit = now - (lag || 0);   // ses hemen (now); isabet/bölme kararı vuruşun gerçek anına (tHit) göre
   let when = now, sync = null, acc = null;
   if (P.on && DIV){
-    const g = divInfo(now);
+    const g = divInfo(tHit);
     if (Math.abs(g.off) > g.win){
       // noktaya denk gelmedi: SESSİZ; kaçırma sayılır
       streakMiss(g.near); S.hits++; S.lastAcc = "sessiz";
@@ -294,7 +297,7 @@ function registerHit(v){
       return;
     }
     acc = g.kind; streakHit(); if (acc === "dum") S.lastDumHit = g.near;
-    if (g.off < 0) when = g.near;          // erken vuruş noktaya yapıştırılır
+    if (g.near > now) when = g.near;       // erken vuruş noktaya yapıştırılır (nokta henüz gelmediyse)
     sync = true; S.synced++;
     hitSound(when, v, acc === "ara" ? null : acc); S.lastAcc = acc;
     if (REC.on) REC.hits.push({ t_ms: Math.round(performance.now() - REC.t0), siddet: +v.toFixed(2), vurgu: acc });
@@ -305,7 +308,7 @@ function registerHit(v){
     return;
   }
   if (P.on){
-    const g = gridInfo(now);
+    const g = gridInfo(tHit);
     // vurgu: en yakın sekizlik düm/tek mi, ve ±60 ms içinde mi
     if (Math.abs(g.off) <= ACCENT_WIN){
       const pat = PATTERNS[pattern], len = pat.len, k = Math.round((g.near - P.t0) / g.d), pos = ((k % len) + len) % len;
@@ -386,7 +389,7 @@ function detSample(ax, ay, az, tMs){
    ~200 ms'de TERS yönde geri dönüş. Bu yüzden "yön kilidi": ilk güçlü tepe vuruş yönünü belirler, yalnız o yöndeki tepeler çalar.
    Yön, kabul edilen vuruşlarla yavaşça güncellenir (tutuş kayarsa izler); 1,5 sn vuruş yokken ters yönde güçlü tepeler gelirse yön yeniden kilitlenir. */
 const GY = {
-  wMin0: 300,       // °/s: bu hızı aşan ve doğru yöndeki tepe vuruştur (hassasiyet çarpanıyla ölçeklenir)
+  wMin0: 250,       // °/s: bu hızı aşan ve doğru yöndeki tepe vuruştur (hassasiyet çarpanıyla ölçeklenir). v6.1: 300→250 (bölmeli ince vuruşlar 250–300 °/s)
   scale: 1500,      // °/s: şiddet 1.0 sayılan tepe (kayıtta vuruşlar 700–1560 °/s)
   refractory: 120,  // ms
   lockMul: 2.0,     // yönü kilitlemek için tepe en az eşik × bu kadar olmalı
@@ -396,7 +399,7 @@ const GY = {
 };
 function gyroSample(gx, gy, gz, tMs){
   const w = Math.hypot(gx, gy, gz), wT = GY.wMin0 * GY.k;
-  if (w > GY.prev){ GY.rising = true; GY.peak = w; GY.pv = [gx, gy, gz]; }
+  if (w > GY.prev){ GY.rising = true; GY.peak = w; GY.pv = [gx, gy, gz]; GY.tPk = tMs; }
   else if (GY.rising){
     // tepe geçildi (bir önceki örnek tepeydi)
     GY.rising = false;
@@ -415,7 +418,7 @@ function gyroSample(gx, gy, gz, tMs){
       GY.tFire = tMs;
       const v = clamp((GY.peak - wT * 0.5) / (GY.scale - wT * 0.5), 0.15, 1);
       $("dbg").textContent = `tepe ${Math.round(GY.peak)} °/s · eşik ${Math.round(wT)} · ${dbgLat}`;
-      registerHit(v);
+      registerHit(v, (tMs - GY.tPk) / 1000);   // v6.1: karar için tepenin gerçek zamanı (algılama ~17 ms sonra)
     }
   }
   GY.prev2 = GY.prev; GY.prev = w;
@@ -450,7 +453,7 @@ function recStart(){
 }
 function recFinish(){
   if (!REC.on) return; REC.on = false; clearTimeout(REC.timer);
-  const meta = { app: "bedenritim v6.0", tarih: new Date().toISOString(), cihaz: navigator.userAgent, dedektor: useGyro && gyroSeen ? "jiroskop" : "ivme",
+  const meta = { app: "bedenritim v6.1", tarih: new Date().toISOString(), cihaz: navigator.userAgent, dedektor: useGyro && gyroSeen ? "jiroskop" : "ivme",
     hassasiyet: +$("sens").value, bolme: DIV, usul: pattern, tempo: P.bpm, nabizSesi: P.vol, sesGecikmesiMs: ctx && (ctx.outputLatency || ctx.baseLatency) ? Math.round((ctx.outputLatency || ctx.baseLatency) * 1000) : null,
     ornekSayisi: REC.rows.length, sureMs: REC.rows.length ? REC.rows[REC.rows.length - 1][0] : 0,
     kolonlar: ["t_ms", "ax", "ay", "az", "gyro_alpha", "gyro_beta", "gyro_gamma"] };
@@ -589,9 +592,12 @@ $("sens").addEventListener("input", e => { $("sensOut").textContent = e.target.v
 try { const sv = localStorage.getItem("br-sens"); if (sv){ $("sens").value = sv; $("sensOut").textContent = sv; } } catch(e){}
 setSens(+$("sens").value);
 $("detSel").addEventListener("change", e => { try { localStorage.setItem("br-det2", e.target.value); } catch(err){} });
-$("divSel").addEventListener("change", e => { DIV = +e.target.value; try { localStorage.setItem("br-div", e.target.value); } catch(err){} });
-try { const dv = localStorage.getItem("br-div"); if (dv){ $("divSel").value = dv; } } catch(e){}
-DIV = +$("divSel").value;
+function setDiv(n){ DIV = n; $("divChips").querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", +c.dataset.div === n ? "true" : "false")); }
+$("divChips").addEventListener("click", e => {
+  const b = e.target.closest(".chip"); if (!b || S.live) return;
+  setDiv(+b.dataset.div); try { localStorage.setItem("br-div", b.dataset.div); } catch(err){}
+});
+try { const dv = localStorage.getItem("br-div"); if (dv) setDiv(+dv); } catch(e){}
 try { const dv = localStorage.getItem("br-det2"); if (dv) $("detSel").value = dv; } catch(e){}
 
 /* ---- tarayıcı çubuğuna / geri tuşuna değen el: üç önlem ---- */
@@ -613,7 +619,7 @@ if (isIOS && !standalone) $("homeNote").hidden = false;
 $("chips").addEventListener("click", e => {
   const b = e.target.closest(".chip"); if (!b) return;
   pattern = b.dataset.p;
-  document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c === b ? "true" : "false"));
+  $("chips").querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c === b ? "true" : "false"));
   if (P.on){ P.idx = 0; }
 });
 // arka plana düşünce durdur (ses ve sensör kesilir)
