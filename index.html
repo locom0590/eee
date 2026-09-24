@@ -31,6 +31,10 @@
     box-shadow:0 0 0 0 rgba(224,168,58,0); font-size:64px; font-weight:700; color:var(--ink); }
   .pulse.beat{ transform:scale(1); }
   .pulse.dum{ transform:scale(1.06); }
+  .ring{ transition:border-color 300ms, box-shadow 300ms; }
+  .ring.l1{ border-color:#7a5a30; }
+  .ring.l2{ border-color:#c8903a; box-shadow:0 0 24px rgba(224,168,58,.25); }
+  .ver{ font-size:11px; font-weight:400; color:var(--mute); margin-left:6px; letter-spacing:0; }
   .pulse.acc-dum{ box-shadow:0 0 48px 10px rgba(224,140,58,.6); background:radial-gradient(circle at 40% 35%, #7a4a26, #2a1a10 70%); }
   .pulse.acc-tek{ box-shadow:0 0 26px 4px rgba(245,225,185,.35); }
   .hit{ position:absolute; width:min(58vw,260px); aspect-ratio:1; border-radius:50%; pointer-events:none;
@@ -83,7 +87,7 @@
 <body>
 <div id="lock" aria-hidden="true"><div id="lockMsg"></div><button id="lockBtn" type="button">Kilitli · açmak için 2 sn basılı tut</button></div>
 <header>
-  <h1>Beden Ritim</h1>
+  <h1>Beden Ritim<span class="ver">v5.9</span></h1>
   <div id="status">Hazır</div>
 </header>
 
@@ -158,16 +162,19 @@ function burst(t, freq, q, peak, dec){
   s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + dec + 0.05);
 }
 /* Kullanıcının tek sesi: şiddet (v: 0–1) tınıyı taşır — hafif → ince "tek", sert → derin "düm" */
-/* v5.8 vurgu: vuruş nabzın düm'üne ±60 ms içinde düşerse dolgun gövde eklenir; tek'ine düşerse hafif parlaklık. Dışarıda normal ses. */
+/* v5.9 isabet sesi: vuruş düm'e ±60 ms içinde düşerse üstüne metalik ZİL, tek'e düşerse küçük ŞIKIRTI eklenir.
+   Tiz oldukları için vuruşun derin gövdesinde kaybolmazlar. Kaçan vuruş yalnız kendi sesiyle çalar. */
 const ACCENT_WIN = 0.060;   // sn
+function zil(t, g){
+  [1, 1.47, 2.09, 2.76].forEach((r, i) => tone(t, 1850 * r, 1850 * r * 0.995, 0.3, g * (0.34 - i * 0.06), 0.55 - i * 0.08));
+  burst(t, 8200, 1.2, g * 0.35, 0.09);
+}
+function sikirti(t, g){ burst(t, 7200, 3, g * 0.45, 0.028); burst(t + 0.02, 6400, 3, g * 0.32, 0.03); }
+/* seri katmanları: 4 isabet → her düm'de bas; 8 isabet → sekizliklerde şıkırdak dokusu */
+function layerBass(t){ tone(t, 72, 52, 0.12, 0.62, 0.34); tone(t, 144, 104, 0.08, 0.10, 0.12, "triangle"); }
+function layerShaker(t, strong){ burst(t, 6800, 1.4, strong ? 0.10 : 0.055, strong ? 0.05 : 0.03); }
 function hitSound(t, v, acc){
-  if (acc === "dum"){
-    tone(t, 130, 46, 0.22, 0.55 + 0.3 * v, 0.42);                                          // derin gövde
-    burst(t, 260, 0.9, 0.18 + 0.12 * v, 0.07);                                             // alçak "tok"
-  } else if (acc === "tek"){
-    burst(t, 4600, 2.4, 0.22 + 0.1 * v, 0.035);                                            // parlak tık
-    tone(t, 980, 640, 0.02, 0.16, 0.05, "triangle");
-  }
+  if (acc === "dum") zil(t, 0.9); else if (acc === "tek") sikirti(t, 0.9);
   const dum = v * v;                 // derin gövde sert vuruşta açılır
   const tek = 0.95 - 0.45 * v;       // ince vuruş hafifte baskın, sertte geri çekilir
   tone(t, 190 + 40 * v, 62, 0.12 + 0.08 * v, 0.95 * dum + 0.08, 0.22 + 0.22 * v);       // gövde
@@ -187,11 +194,11 @@ const PATTERNS = {
 let pattern = "duz";
 
 /* ========= nabız zamanlayıcısı (Web Audio saati) ========= */
-const P = { on: false, bpm: 100, vol: 0.55, eighth: 0.3, t0: 0, idx: 0, next: 0, timer: null, beatEvents: [] };
+const P = { on: false, bpm: 100, vol: 0.55, eighth: 0.3, t0: 0, idx: 0, next: 0, timer: null, beatEvents: [], dumCheck: [] };
 function eighthDur(){ return 30 / P.bpm; }
 function startPulse(){
   initAudio(); ctx.resume();
-  P.on = true; P.eighth = eighthDur(); P.t0 = ctx.currentTime + 0.12; P.next = P.t0; P.idx = 0; P.beatEvents = [];
+  P.on = true; P.eighth = eighthDur(); P.t0 = ctx.currentTime + 0.12; P.next = P.t0; P.idx = 0; P.beatEvents = []; P.dumCheck = [];
   clearInterval(P.timer); P.timer = setInterval(schedule, 25); schedule();
 }
 function stopPulse(){ P.on = false; clearInterval(P.timer); P.timer = null; }
@@ -202,6 +209,9 @@ function schedule(){
     const pos = P.idx % pat.len, t = P.next;
     const isD = pat.D.includes(pos), isT = pat.T.includes(pos);
     if (P.vol > 0){ if (isD) pulseDum(t, P.vol); else if (isT) pulseTek(t, P.vol); }
+    if (S.live && S.level >= 1 && isD) layerBass(t);
+    if (S.live && S.level >= 2) layerShaker(t, isD || isT);
+    if (isD) P.dumCheck.push(t);
     P.beatEvents.push({ t, kind: isD ? "dum" : isT ? "tek" : "rest", bar: pos === 0 });
     if (REC.on && (isD || isT)) REC.beats.push({ t_ms: Math.round(performance.now() + (t - ctx.currentTime) * 1000 - REC.t0), tur: isD ? "dum" : "tek" });
     P.eighth = eighthDur();
@@ -209,6 +219,11 @@ function schedule(){
   }
   // görsel: sırası gelen olayları işle
   const now = ctx.currentTime;
+  // düm, vurulmadan geçtiyse (pencere kapandı, isabet yok) = kaçırma. Aynı düm'ün yanında zaten kaçan bir vuruş cezalandırıldıysa tekrar sayılmaz.
+  while (P.dumCheck.length && now > P.dumCheck[0] + ACCENT_WIN + 0.02){
+    const t = P.dumCheck.shift();
+    if (S.live && Math.abs(S.lastDumHit - t) > 0.002 && Math.abs(S.lastMissT - t) > 0.2) streakMiss(t);
+  }
   while (P.beatEvents.length && P.beatEvents[0].t <= now + 0.005){
     const ev = P.beatEvents.shift(); flashBeat(ev);
   }
@@ -241,7 +256,11 @@ function flashAccent(acc){
   setTimeout(() => pulseEl.classList.remove("acc-dum", "acc-tek"), acc === "dum" ? 220 : 140);
 }
 /* ========= oturum / vuruş ========= */
-const S = { live: false, hits: 0, synced: 0, times: [], t0: 0 };
+const S = { live: false, hits: 0, synced: 0, times: [], t0: 0, streak: 0, level: 0, best: 0, lastDumHit: -1, lastMissT: -9 };
+const LEVEL_AT = [0, 4, 8];
+function setLevel(l){ S.level = l; const r = document.querySelector(".ring"); r.classList.remove("l1", "l2"); if (l) r.classList.add("l" + l); }
+function streakHit(){ S.streak++; S.best = Math.max(S.best, S.streak); const l = S.streak >= LEVEL_AT[2] ? 2 : S.streak >= LEVEL_AT[1] ? 1 : 0; if (l !== S.level) setLevel(l); }
+function streakMiss(t){ S.lastMissT = t; const l = Math.max(0, S.level - 1); S.streak = LEVEL_AT[l]; setLevel(l); }   // bir basamak in
 function registerHit(v){
   if (!S.live) return;
   initAudio();
@@ -254,6 +273,8 @@ function registerHit(v){
       const pat = PATTERNS[pattern], len = pat.len, k = Math.round((g.near - P.t0) / g.d), pos = ((k % len) + len) % len;
       acc = pat.D.includes(pos) ? "dum" : pat.T.includes(pos) ? "tek" : null;
     }
+    if (acc){ streakHit(); if (acc === "dum") S.lastDumHit = g.near; }
+    else streakMiss(g.near);
     // Vuruş nabzın hemen önündeyse ("erken"), sesi nabza yapıştır; geç kaldıysa hemen çal
     const ahead = g.near - now;
     if (ahead > 0 && ahead <= 0.045) when = g.near;
@@ -391,7 +412,7 @@ function recStart(){
 }
 function recFinish(){
   if (!REC.on) return; REC.on = false; clearTimeout(REC.timer);
-  const meta = { app: "bedenritim v5.8", tarih: new Date().toISOString(), cihaz: navigator.userAgent, dedektor: useGyro && gyroSeen ? "jiroskop" : "ivme",
+  const meta = { app: "bedenritim v5.9", tarih: new Date().toISOString(), cihaz: navigator.userAgent, dedektor: useGyro && gyroSeen ? "jiroskop" : "ivme",
     hassasiyet: +$("sens").value, usul: pattern, tempo: P.bpm, nabizSesi: P.vol, sesGecikmesiMs: ctx && (ctx.outputLatency || ctx.baseLatency) ? Math.round((ctx.outputLatency || ctx.baseLatency) * 1000) : null,
     ornekSayisi: REC.rows.length, sureMs: REC.rows.length ? REC.rows[REC.rows.length - 1][0] : 0,
     kolonlar: ["t_ms", "ax", "ay", "az", "gyro_alpha", "gyro_beta", "gyro_gamma"] };
@@ -453,7 +474,7 @@ async function start(rec){
   const ok = await ensureSensor();          // ilk iş: izin (araya await girmeden)
   if (!ok && hasTouch) return;              // telefonda sensör yoksa başlama, uyarı ekranda
   initAudio(); try { await ctx.resume(); } catch(e){}
-  S.hits = 0; S.synced = 0; S.times = []; $("sHits").textContent = 0; $("sSync").textContent = "–"; $("sBpm").textContent = "–";
+  S.hits = 0; S.synced = 0; S.times = []; S.streak = 0; S.best = 0; S.lastDumHit = -1; S.lastMissT = -9; setLevel(0); $("sHits").textContent = 0; $("sSync").textContent = "–"; $("sBpm").textContent = "–";
   Object.assign(DET, { tFire: 0, prevA: [0, 0, 0], prevA2: [0, 0, 0], tPrev: 0, flow: [0, 0, 0], peakTrack: 0, trackUntil: 0, lastPeak: 0 });
   Object.assign(GY, { prev: 0, prev2: 0, rising: false, peak: 0, pv: [0, 0, 0], tFire: 0, dir: null, tStray: -1e9, avg: 0 });
   useGyro = $("detSel").value === "gyro";
@@ -494,7 +515,7 @@ function stop(){
   recFinish();
   $("btnStart").textContent = "Başla"; $("btnStart").classList.remove("stop");
   pulseEl.textContent = ""; pulseEl.classList.remove("beat", "dum");
-  setStatus(S.hits ? `${S.hits} vuruş` : "Hazır");
+  setStatus(S.hits ? `${S.hits} vuruş · en uzun seri ${S.best}` : "Hazır"); setLevel(0);
   $("hint").textContent = "Telefonu beline tak ya da baget gibi elinde tut. Sesi hoparlörden ya da kablolu kulaklıktan ver; Bluetooth vuruşları geciktirir.";
 }
 // Başla: tek dokunuş. Bitir: 1 saniye basılı tutma — çalarken yanlışlıkla ekrana gelen el oturumu kesmesin.
