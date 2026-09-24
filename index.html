@@ -87,7 +87,7 @@
 <body>
 <div id="lock" aria-hidden="true"><div id="lockMsg"></div><button id="lockBtn" type="button">Kilitli · açmak için 2 sn basılı tut</button></div>
 <header>
-  <h1>Beden Ritim<span class="ver">v5.9</span></h1>
+  <h1>Beden Ritim<span class="ver">v6.0</span></h1>
   <div id="status">Hazır</div>
 </header>
 
@@ -114,6 +114,7 @@
   </div>
   <div class="row"><label for="tempo">Tempo</label><input id="tempo" type="range" min="60" max="180" value="100"><output id="tempoOut">100</output></div>
   <div class="row"><label for="pvol">Nabız sesi</label><input id="pvol" type="range" min="0" max="100" value="55"><output id="pvolOut">55</output></div>
+  <div class="row"><label for="divSel">Bölme</label><select id="divSel"><option value="0">Kapalı — her vuruş çalar</option><option value="3">3 — düm-ta-ta</option><option value="4">4 — düm-ta-ka-ta</option></select></div>
   <div class="row"><label for="sens">Hassasiyet</label><input id="sens" type="range" min="1" max="5" value="3"><output id="sensOut">3</output></div>
   <div class="row"><label for="detSel">Algılama</label><select id="detSel"><option value="gyro">Bilek tepesi (jiroskop) — önerilen</option><option value="acc">Ani duruş (ivme) — jiroskopsuz telefon için</option></select></div>
   <div class="note" id="homeNote" hidden>Tarayıcı düğmelerine el değmesin diye: paylaş menüsünden <strong>Ana Ekrana Ekle</strong> deyip oradan aç; çubuksuz, tam ekran çalışır.</div>
@@ -187,9 +188,9 @@ function pulseTek(t, vol){ burst(t, 2400, 2.2, 0.22 * vol, 0.04); tone(t, 520, 3
 
 /* ========= usuller (sekizlik konumlar) ========= */
 const PATTERNS = {
-  duz:       { len: 4, D: [0], T: [2] },                   // 2/4: düm . tek .
-  baladi:    { len: 8, D: [0, 1, 4], T: [3, 6] },          // 4/4: düm düm . tek düm . tek .
-  karsilama: { len: 9, D: [0, 4], T: [2, 6, 7] }           // 9/8: 2+2+2+3
+  duz:       { len: 4, D: [0], T: [2], G: [2, 2] },             // 2/4: düm . tek .
+  baladi:    { len: 8, D: [0, 1, 4], T: [3, 6], G: [2, 2, 2, 2] }, // 4/4: düm düm . tek düm . tek .
+  karsilama: { len: 9, D: [0, 4], T: [2, 6, 7], G: [2, 2, 2, 3] }  // 9/8: 2+2+2+3 (G = vuruş grupları, sekizlik)
 };
 let pattern = "duz";
 
@@ -222,11 +223,28 @@ function schedule(){
   // düm, vurulmadan geçtiyse (pencere kapandı, isabet yok) = kaçırma. Aynı düm'ün yanında zaten kaçan bir vuruş cezalandırıldıysa tekrar sayılmaz.
   while (P.dumCheck.length && now > P.dumCheck[0] + ACCENT_WIN + 0.02){
     const t = P.dumCheck.shift();
-    if (S.live && Math.abs(S.lastDumHit - t) > 0.002 && Math.abs(S.lastMissT - t) > 0.2) streakMiss(t);
+    if (S.live && !DIV && Math.abs(S.lastDumHit - t) > 0.002 && Math.abs(S.lastMissT - t) > 0.2) streakMiss(t);   // bölme açıkken düm'ü atlamak serbest
   }
   while (P.beatEvents.length && P.beatEvents[0].t <= now + 0.005){
     const ev = P.beatEvents.shift(); flashBeat(ev);
   }
+}
+/* v6.0 BÖLME: her vuruş grubu (G) DIV parçaya bölünür; vuruş en yakın noktaya pencere içinde düşerse çalar, düşmezse sessiz.
+   Pencere = noktalar arası mesafenin 1/4'ü (100 bpm'de 4'lü ±37,5 ms, 3'lü ±50 ms; tempoyla orantılı). */
+let DIV = 0;   // 0 = kapalı, 3 ya da 4
+function divPoints(pat){   // bir ölçüdeki noktalar: { x (sekizlik), step (sekizlik) }
+  const pts = []; let s = 0;
+  for (const L of pat.G){ for (let i = 0; i < DIV; i++) pts.push({ x: s + L * i / DIV, step: L / DIV }); s += L; }
+  return pts;
+}
+function divInfo(now){
+  const pat = PATTERNS[pattern], d = P.eighth, x = (now - P.t0) / d, b = Math.floor(x / pat.len), xr = x - b * pat.len;
+  const pts = divPoints(pat), cand = [...pts, { x: pat.len, step: pts[0].step, next: true }, { x: pts[pts.length - 1].x - pat.len, step: pts[pts.length - 1].step }];
+  let best = null; for (const p of cand){ const o = xr - p.x; if (!best || Math.abs(o) < Math.abs(best.o)) best = { o, p }; }
+  const px = best.p.next ? 0 : best.p.x < 0 ? best.p.x + pat.len : best.p.x;
+  const pos = Number.isInteger(Math.round(px * 1000) / 1000) ? Math.round(px) : -1;
+  return { off: best.o * d, win: best.p.step * d / 4, near: now - best.o * d,
+           kind: pos < 0 ? "ara" : pat.D.includes(pos) ? "dum" : pat.T.includes(pos) ? "tek" : "ara" };
 }
 /* En yakın sekizlik: geçmiş ve gelecekteki mesafe */
 function gridInfo(now){
@@ -266,6 +284,26 @@ function registerHit(v){
   initAudio();
   const now = ctx.currentTime;
   let when = now, sync = null, acc = null;
+  if (P.on && DIV){
+    const g = divInfo(now);
+    if (Math.abs(g.off) > g.win){
+      // noktaya denk gelmedi: SESSİZ; kaçırma sayılır
+      streakMiss(g.near); S.hits++; S.lastAcc = "sessiz";
+      if (REC.on) REC.hits.push({ t_ms: Math.round(performance.now() - REC.t0), siddet: +v.toFixed(2), vurgu: "sessiz" });
+      flashHit(0.15, false); $("sHits").textContent = S.hits; $("sSync").textContent = Math.round(100 * S.synced / S.hits) + "%";
+      return;
+    }
+    acc = g.kind; streakHit(); if (acc === "dum") S.lastDumHit = g.near;
+    if (g.off < 0) when = g.near;          // erken vuruş noktaya yapıştırılır
+    sync = true; S.synced++;
+    hitSound(when, v, acc === "ara" ? null : acc); S.lastAcc = acc;
+    if (REC.on) REC.hits.push({ t_ms: Math.round(performance.now() - REC.t0), siddet: +v.toFixed(2), vurgu: acc });
+    S.hits++;
+    const pn = performance.now(); S.times.push(pn); if (S.times.length > 9) S.times.shift();
+    flashHit(v, true); flashAccent(acc === "ara" ? null : acc);
+    $("sHits").textContent = S.hits; $("sSync").textContent = Math.round(100 * S.synced / S.hits) + "%";
+    return;
+  }
   if (P.on){
     const g = gridInfo(now);
     // vurgu: en yakın sekizlik düm/tek mi, ve ±60 ms içinde mi
@@ -412,8 +450,8 @@ function recStart(){
 }
 function recFinish(){
   if (!REC.on) return; REC.on = false; clearTimeout(REC.timer);
-  const meta = { app: "bedenritim v5.9", tarih: new Date().toISOString(), cihaz: navigator.userAgent, dedektor: useGyro && gyroSeen ? "jiroskop" : "ivme",
-    hassasiyet: +$("sens").value, usul: pattern, tempo: P.bpm, nabizSesi: P.vol, sesGecikmesiMs: ctx && (ctx.outputLatency || ctx.baseLatency) ? Math.round((ctx.outputLatency || ctx.baseLatency) * 1000) : null,
+  const meta = { app: "bedenritim v6.0", tarih: new Date().toISOString(), cihaz: navigator.userAgent, dedektor: useGyro && gyroSeen ? "jiroskop" : "ivme",
+    hassasiyet: +$("sens").value, bolme: DIV, usul: pattern, tempo: P.bpm, nabizSesi: P.vol, sesGecikmesiMs: ctx && (ctx.outputLatency || ctx.baseLatency) ? Math.round((ctx.outputLatency || ctx.baseLatency) * 1000) : null,
     ornekSayisi: REC.rows.length, sureMs: REC.rows.length ? REC.rows[REC.rows.length - 1][0] : 0,
     kolonlar: ["t_ms", "ax", "ay", "az", "gyro_alpha", "gyro_beta", "gyro_gamma"] };
   const data = { meta, nabizVurusMs: REC.beats, algilananVurusMs: REC.hits, ornekler: REC.rows };
@@ -551,6 +589,9 @@ $("sens").addEventListener("input", e => { $("sensOut").textContent = e.target.v
 try { const sv = localStorage.getItem("br-sens"); if (sv){ $("sens").value = sv; $("sensOut").textContent = sv; } } catch(e){}
 setSens(+$("sens").value);
 $("detSel").addEventListener("change", e => { try { localStorage.setItem("br-det2", e.target.value); } catch(err){} });
+$("divSel").addEventListener("change", e => { DIV = +e.target.value; try { localStorage.setItem("br-div", e.target.value); } catch(err){} });
+try { const dv = localStorage.getItem("br-div"); if (dv){ $("divSel").value = dv; } } catch(e){}
+DIV = +$("divSel").value;
 try { const dv = localStorage.getItem("br-det2"); if (dv) $("detSel").value = dv; } catch(e){}
 
 /* ---- tarayıcı çubuğuna / geri tuşuna değen el: üç önlem ---- */
